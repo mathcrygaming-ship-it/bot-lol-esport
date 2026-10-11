@@ -16,29 +16,25 @@ class LoLEsportBot(discord.Client):
         await self.tree.sync()
         print("Commandes Discord synchronisées.")
 
-
 bot = LoLEsportBot()
 
 
 @bot.event
 async def on_ready():
-    print(f"BOT LOL ESPORT connecté : {bot.user}")
+    print(f"Connecté à Discord : {bot.user}")
 
 
 @bot.tree.command(
     name="ping",
-    description="Vérifie si BOT LOL ESPORT fonctionne."
+    description="Vérifie si BOT LOL ESPORT répond."
 )
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(
-        "🏆 BOT LOL ESPORT est opérationnel ! Direction les Worlds 2026."
+        "🏆 BOT LOL ESPORT est en ligne !"
     )
 
 
 if __name__ == "__main__":
     if not TOKEN:
-        raise RuntimeError(
-            "La variable DISCORD_TOKEN est absente."
-        )
-
+        raise RuntimeError("Secret DISCORD_TOKEN manquant.")
     bot.run(TOKEN)
