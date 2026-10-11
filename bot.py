@@ -1,4 +1,3 @@
-```python
 import os
 import sys
 import discord
@@ -43,4 +42,3 @@ if __name__ == "__main__":
         raise RuntimeError("Secret DISCORD_TOKEN manquant.")
 
     bot.run(TOKEN)
-```
