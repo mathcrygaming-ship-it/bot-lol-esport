@@ -1,4 +1,3 @@
-```yaml
 name: BOT LOL ESPORT - Test Discord
 
 'on':
@@ -29,4 +28,3 @@ jobs:
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
         run: python bot.py --test
-```
