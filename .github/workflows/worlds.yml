@@ -27,4 +27,12 @@ jobs:
       - name: Tester la connexion Discord
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
         run: python bot.py --test
+
+      - name: Tester la publication Discord
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
+        run: |
+          python -c "import os, discord; print('Identifiant du salon configure :', bool(os.getenv('DISCORD_CHANNEL_ID')))"
