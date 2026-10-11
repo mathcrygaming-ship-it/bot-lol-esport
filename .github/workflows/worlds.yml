@@ -1,7 +1,7 @@
 ```yaml
 name: BOT LOL ESPORT - Test Discord
 
-on:
+'on':
   workflow_dispatch:
 
 permissions:
@@ -10,7 +10,6 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Recuperer le code
         uses: actions/checkout@v4
