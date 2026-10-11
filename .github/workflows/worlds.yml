@@ -1,0 +1,36 @@
+
+name: BOT LOL ESPORT - Test Discord
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dependances
+        run: pip install -r requirements.txt
+
+      - name: Verifier le code
+        run: python -m py_compile bot.py
+
+      - name: Verifier la presence du secret
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+        run: |
+          if [ -z "$DISCORD_TOKEN" ]; then
+            echo "Le secret DISCORD_TOKEN est absent."
+            exit 1
+          fi
+          echo "Le secret DISCORD_TOKEN est configure."
