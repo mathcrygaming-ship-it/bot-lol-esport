@@ -1,4 +1,4 @@
-name: BOT LOL ESPORT - Recherche Worlds et LEC
+name: BOT LOL ESPORT - Test Donnees Worlds
 
 'on':
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 jobs:
-  recherche:
+  tester-worlds:
     runs-on: ubuntu-latest
     steps:
       - name: Recuperer le code
@@ -24,7 +24,7 @@ jobs:
       - name: Verifier le code
         run: python -m py_compile bot.py
 
-      - name: Rechercher Worlds et LEC
+      - name: Tester calendrier et classement Worlds
         env:
           CITO_API_KEY: ${{ secrets.CITO_API_KEY }}
         run: |
@@ -32,51 +32,54 @@ jobs:
           import os
           import json
           import urllib.request
+          import urllib.error
 
           key = os.getenv("CITO_API_KEY")
           if not key:
               raise SystemExit("Secret CITO_API_KEY absent.")
 
-          url = "https://api.citoapi.com/api/v1/lol/leagues"
-          request = urllib.request.Request(
-              url,
-              headers={
-                  "x-api-key": key,
-                  "Accept": "application/json"
-              }
-          )
+          base = "https://api.citoapi.com/api/v1/lol/leagues/lol-worlds"
 
-          with urllib.request.urlopen(request, timeout=30) as response:
-              payload = json.loads(response.read().decode("utf-8"))
+          endpoints = [
+              ("CALENDRIER WORLDS", base + "/schedule"),
+              ("CLASSEMENT WORLDS", base + "/standings"),
+          ]
 
-          if not payload.get("success"):
-              raise SystemExit("Cito API n'a pas confirme le succes.")
+          for label, url in endpoints:
+              print("\n===", label, "===")
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "x-api-key": key,
+                      "Accept": "application/json"
+                  }
+              )
 
-          leagues = payload.get("data", [])
-          print("Nombre total de ligues :", len(leagues))
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      payload = json.loads(response.read().decode("utf-8"))
 
-          for league in leagues:
-              searchable = " ".join([
-                  str(league.get("name", "")),
-                  str(league.get("slug", "")),
-                  str(league.get("leagueId", "")),
-                  " ".join(str(x) for x in league.get("aliases", []))
-              ]).lower()
+                  print("HTTP :", response.status)
+                  print("Succes API :", payload.get("success", "non precise")
+                        if isinstance(payload, dict) else "format liste")
 
-              if (
-                  "worlds" in searchable
-                  or "world championship" in searchable
-                  or "lec" in searchable
-              ):
-                  print(json.dumps({
-                      "name": league.get("name"),
-                      "slug": league.get("slug"),
-                      "leagueId": league.get("leagueId"),
-                      "isActive": league.get("isActive"),
-                      "tournaments": league.get("_count", {}).get("tournaments"),
-                      "schedule": league.get("endpoints", {}).get("schedule"),
-                      "standings": league.get("endpoints", {}).get("standings")
-                  }, ensure_ascii=False))
+                  if isinstance(payload, dict):
+                      data = payload.get("data", payload.get("matches", payload))
+                  else:
+                      data = payload
 
-          print("Recherche terminee. Aucun message Discord envoye.")
+                  if isinstance(data, list):
+                      print("Elements retournes :", len(data))
+                      print(json.dumps(data[:3], ensure_ascii=False, indent=2)[:6000])
+                  else:
+                      print("Structure recue :")
+                      print(json.dumps(data, ensure_ascii=False, indent=2)[:6000])
+
+              except urllib.error.HTTPError as error:
+                  print("ERREUR HTTP :", error.code)
+                  print(error.read().decode("utf-8", errors="replace")[:2000])
+              except Exception as error:
+                  print("ERREUR :", type(error).__name__, str(error))
+
+          print("\nTest termine. Aucun message Discord envoye.")
           PY
