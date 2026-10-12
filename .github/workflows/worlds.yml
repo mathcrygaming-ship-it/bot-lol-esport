@@ -1,4 +1,4 @@
-name: BOT LOL ESPORT - Verification Resultats Worlds
+name: BOT LOL ESPORT - Diagnostic Calendrier
 
 'on':
   workflow_dispatch:
@@ -7,21 +7,10 @@ permissions:
   contents: read
 
 jobs:
-  verifier-resultats:
+  diagnostic:
     runs-on: ubuntu-latest
     steps:
-      - name: Recuperer le code
-        uses: actions/checkout@v4
-
-      - name: Installer Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Verifier le code
-        run: python -m py_compile bot.py
-
-      - name: Analyser le calendrier Worlds
+      - name: Diagnostiquer la reponse Cito
         env:
           CITO_API_KEY: ${{ secrets.CITO_API_KEY }}
         run: |
@@ -30,7 +19,6 @@ jobs:
           import json
           import urllib.request
           import urllib.error
-          from collections import Counter
 
           key = os.getenv("CITO_API_KEY")
           if not key:
@@ -44,42 +32,24 @@ jobs:
 
           try:
               with urllib.request.urlopen(request, timeout=30) as response:
-                  payload = json.loads(response.read().decode("utf-8"))
+                  raw = response.read().decode("utf-8")
+                  print("HTTP :", response.status)
+                  print("Taille de la reponse :", len(raw), "caracteres")
+                  try:
+                      payload = json.loads(raw)
+                      print("Type :", type(payload).__name__)
+                      if isinstance(payload, dict):
+                          print("Cles principales :", list(payload.keys()))
+                      print("Reponse brute :")
+                      print(json.dumps(
+                          payload, ensure_ascii=False, indent=2
+                      )[:10000])
+                  except json.JSONDecodeError:
+                      print(raw[:10000])
           except urllib.error.HTTPError as error:
-              print("Erreur HTTP :", error.code)
-              print(error.read().decode("utf-8", errors="replace")[:2000])
+              print("ERREUR HTTP :", error.code)
+              print(error.read().decode("utf-8", errors="replace")[:3000])
               raise SystemExit(1)
 
-          events = payload.get("events", [])
-          print("Nombre total d'evenements :", len(events))
-          print("Repartition des etats :")
-          print(json.dumps(
-              dict(Counter(e.get("state", "inconnu") for e in events)),
-              ensure_ascii=False,
-              indent=2
-          ))
-
-          for state in ("completed", "inProgress"):
-              matches = [
-                  e for e in events
-                  if str(e.get("state", "")).lower() == state.lower()
-              ]
-              print(f"\n=== MATCHS {state.upper()} : {len(matches)} ===")
-              for match in matches[:10]:
-                  teams = match.get("teams", [])
-                  teams_text = " vs ".join(
-                      f"{t.get('name', '?')} ({t.get('score', '?')})"
-                      for t in teams
-                  )
-                  print(
-                      match.get("startTime"),
-                      "|",
-                      match.get("blockName"),
-                      "|",
-                      teams_text,
-                      "| ID:",
-                      match.get("matchId")
-                  )
-
-          print("\nVerification terminee. Aucun message Discord envoye.")
+          print("\nDiagnostic termine. Aucun message Discord envoye.")
           PY
