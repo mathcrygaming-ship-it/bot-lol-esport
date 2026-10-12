@@ -1,4 +1,4 @@
-name: BOT LOL ESPORT - Diagnostic Calendrier
+name: BOT LOL ESPORT - Test Detail Match
 
 'on':
   workflow_dispatch:
@@ -7,10 +7,10 @@ permissions:
   contents: read
 
 jobs:
-  diagnostic:
+  tester-detail:
     runs-on: ubuntu-latest
     steps:
-      - name: Diagnostiquer la reponse Cito
+      - name: Tester le detail du match KC
         env:
           CITO_API_KEY: ${{ secrets.CITO_API_KEY }}
         run: |
@@ -19,13 +19,13 @@ jobs:
           import json
           import urllib.request
           import urllib.error
-          from collections import Counter
 
           key = os.getenv("CITO_API_KEY")
           if not key:
               raise SystemExit("Secret CITO_API_KEY absent.")
 
-          url = "https://api.citoapi.com/api/v1/lol/leagues/lol-worlds/schedule"
+          match_id = "lol-match-115660588583171786"
+          url = f"https://api.citoapi.com/api/v1/lol/matches/{match_id}"
 
           request = urllib.request.Request(
               url,
@@ -37,67 +37,21 @@ jobs:
 
           try:
               with urllib.request.urlopen(request, timeout=30) as response:
-                  payload = json.loads(
-                      response.read().decode("utf-8")
-                  )
+                  raw = response.read().decode("utf-8")
                   print("HTTP :", response.status)
+                  payload = json.loads(raw)
+                  print("Reponse API :")
+                  print(json.dumps(
+                      payload,
+                      ensure_ascii=False,
+                      indent=2
+                  )[:10000])
 
           except urllib.error.HTTPError as error:
               print("ERREUR HTTP :", error.code)
-              print(
-                  error.read().decode(
-                      "utf-8", errors="replace"
-                  )[:3000]
-              )
-              raise SystemExit(1)
+              print(error.read().decode(
+                  "utf-8", errors="replace"
+              )[:3000])
 
-          data = payload.get("data", {})
-          events = data.get("events", [])
-
-          print("Nombre total d'evenements :", len(events))
-          print("Repartition des etats :")
-          print(json.dumps(
-              dict(Counter(
-                  event.get("state", "inconnu")
-                  for event in events
-              )),
-              ensure_ascii=False,
-              indent=2
-          ))
-
-          for state in ("completed", "inProgress"):
-              matches = [
-                  event for event in events
-                  if str(event.get("state", "")).lower()
-                  == state.lower()
-              ]
-
-              print(
-                  f"\n=== MATCHS {state.upper()} : "
-                  f"{len(matches)} ==="
-              )
-
-              for match in matches[:10]:
-                  teams = match.get("teams", [])
-
-                  teams_text = " vs ".join(
-                      f"{team.get('name', '?')} "
-                      f"({team.get('score', '?')})"
-                      for team in teams
-                  )
-
-                  print(
-                      match.get("startTime"),
-                      "|",
-                      match.get("blockName"),
-                      "|",
-                      teams_text,
-                      "| ID:",
-                      match.get("matchId")
-                  )
-
-          print(
-              "\nDiagnostic termine. "
-              "Aucun message Discord envoye."
-          )
+          print("\nTest termine. Aucun message Discord envoye.")
           PY
