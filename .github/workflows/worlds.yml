@@ -1,4 +1,4 @@
-name: BOT LOL ESPORT - Test Discord
+name: BOT LOL ESPORT - Test Discord et Cito
 
 'on':
   workflow_dispatch:
@@ -30,9 +30,45 @@ jobs:
           DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
         run: python bot.py --test
 
-      - name: Tester la publication Discord
+      - name: Tester Cito API
         env:
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
+          CITO_API_KEY: ${{ secrets.CITO_API_KEY }}
         run: |
-          python -c "import os, discord; print('Identifiant du salon configure :', bool(os.getenv('DISCORD_CHANNEL_ID')))"
+          python - <<'PY'
+          import os
+          import json
+          import urllib.request
+          import urllib.error
+
+          key = os.getenv("CITO_API_KEY")
+          if not key:
+              raise SystemExit("ERREUR : secret CITO_API_KEY absent.")
+
+          url = "https://api.citoapi.com/api/v1/lol/schedule/upcoming"
+          request = urllib.request.Request(
+              url,
+              headers={
+                  "x-api-key": key,
+                  "Accept": "application/json"
+              }
+          )
+
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+                  print("Connexion Cito API : OK")
+                  print("Code HTTP :", response.status)
+                  print("Réponse reçue :", isinstance(payload, dict))
+                  print("Statut API :", payload.get("success", "non précisé"))
+                  matches = payload.get("data") or payload.get("matches") or []
+                  if isinstance(matches, list):
+                      print("Nombre de matchs renvoyés :", len(matches))
+                  else:
+                      print("Données reçues, format à examiner.")
+          except urllib.error.HTTPError as error:
+              print("Cito API a répondu avec le code HTTP :", error.code)
+              raise SystemExit("Le test API a échoué. Vérifie l'accès et la clé.")
+          except Exception as error:
+              print("Échec de la requête :", type(error).__name__)
+              raise SystemExit(1)
+          PY
