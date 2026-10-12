@@ -40,10 +40,15 @@ jobs:
 
           base = "https://api.citoapi.com/api/v1/lol/leagues/lol-worlds"
 
+          
           endpoints = [
-              ("CALENDRIER WORLDS", base + "/schedule"),
-              ("CLASSEMENT WORLDS", base + "/standings"),
+              ("CLASSEMENT WORLDS PAR DEFAUT", base + "/standings"),
+              (
+                  "CLASSEMENT WORLDS 2026",
+                  base + "/standings?tournamentId=lol-worlds_2026"
+              ),
           ]
+
 
           for label, url in endpoints:
               print("\n===", label, "===")
