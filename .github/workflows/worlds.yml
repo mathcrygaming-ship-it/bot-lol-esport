@@ -1,4 +1,4 @@
-name: BOT LOL ESPORT - Diagnostic Calendrier
+name: BOT LOL ESPORT - Diagnostic Ligues
 
 'on':
   workflow_dispatch:
@@ -9,7 +9,6 @@ permissions:
 jobs:
   diagnostic:
     runs-on: ubuntu-latest
-
     steps:
       - name: Recuperer le code
         uses: actions/checkout@v4
@@ -22,10 +21,10 @@ jobs:
       - name: Installer les dependances
         run: pip install -r requirements.txt
 
-      - name: Verifier le code Python
+      - name: Verifier le code
         run: python -m py_compile bot.py
 
-      - name: Comparer les calendriers Cito
+      - name: Examiner les ligues Cito
         env:
           CITO_API_KEY: ${{ secrets.CITO_API_KEY }}
         run: |
@@ -35,57 +34,27 @@ jobs:
           import urllib.request
 
           key = os.getenv("CITO_API_KEY")
-          if not key:
-              raise SystemExit("Secret CITO_API_KEY absent.")
+          url = "https://api.citoapi.com/api/v1/lol/leagues"
 
-          base = "https://api.citoapi.com/api/v1/lol/schedule/upcoming"
+          request = urllib.request.Request(
+              url,
+              headers={
+                  "x-api-key": key or "",
+                  "Accept": "application/json"
+              }
+          )
 
-          for label, url in [
-              ("CALENDRIER GENERAL", base),
-              ("WORLDS UNIQUEMENT", base + "?leagueSlug=worlds"),
-          ]:
-              print("\n===", label, "===")
-              request = urllib.request.Request(
-                  url,
-                  headers={
-                      "x-api-key": key,
-                      "Accept": "application/json"
-                  }
-              )
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
 
-              try:
-                  with urllib.request.urlopen(request, timeout=30) as response:
-                      payload = json.loads(response.read().decode("utf-8"))
+              print("HTTP :", response.status)
+              print("Reponse API :")
+              print(json.dumps(payload, ensure_ascii=False, indent=2)[:12000])
 
-                  print("HTTP :", response.status)
-                  print("Succes API :", payload.get("success", "non precise")
-                        if isinstance(payload, dict) else "format liste")
+              print("\nDiagnostic termine. Aucun message Discord envoye.")
 
-                  data = (
-                      payload.get("data", payload.get("matches", []))
-                      if isinstance(payload, dict) else payload
-                  )
-
-                  if not isinstance(data, list):
-                      print("Structure inattendue :")
-                      print(json.dumps(payload, ensure_ascii=False)[:2000])
-                      continue
-
-                  print("Nombre de matchs :", len(data))
-
-                  for match in data[:8]:
-                      if isinstance(match, dict):
-                          print(json.dumps({
-                              "leagueName": match.get("leagueName"),
-                              "leagueSlug": match.get("leagueSlug"),
-                              "startTime": match.get("startTime"),
-                              "state": match.get("state"),
-                              "team1": match.get("team1"),
-                              "team2": match.get("team2")
-                          }, ensure_ascii=False))
-
-              except Exception as error:
-                  print("ERREUR :", type(error).__name__, str(error))
-
-          print("\nDiagnostic termine. Aucun message Discord envoye.")
+          except Exception as error:
+              print("Erreur :", type(error).__name__, str(error))
+              raise SystemExit(1)
           PY
