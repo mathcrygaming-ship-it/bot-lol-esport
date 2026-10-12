@@ -1,4 +1,4 @@
-name: BOT LOL ESPORT - Test Discord et Cito
+name: BOT LOL ESPORT - Verification Worlds 2026
 
 'on':
   workflow_dispatch:
@@ -7,8 +7,9 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  verifier-worlds:
     runs-on: ubuntu-latest
+
     steps:
       - name: Recuperer le code
         uses: actions/checkout@v4
@@ -21,16 +22,10 @@ jobs:
       - name: Installer les dependances
         run: pip install -r requirements.txt
 
-      - name: Verifier le code
+      - name: Verifier le code Python
         run: python -m py_compile bot.py
 
-      - name: Tester la connexion Discord
-        env:
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
-        run: python bot.py --test
-
-      - name: Tester Cito API
+      - name: Interroger le calendrier Worlds
         env:
           CITO_API_KEY: ${{ secrets.CITO_API_KEY }}
         run: |
@@ -44,7 +39,11 @@ jobs:
           if not key:
               raise SystemExit("ERREUR : secret CITO_API_KEY absent.")
 
-          url = "https://api.citoapi.com/api/v1/lol/schedule/upcoming"
+          url = (
+              "https://api.citoapi.com/api/v1/lol/schedule/upcoming"
+              "?leagueSlug=worlds"
+          )
+
           request = urllib.request.Request(
               url,
               headers={
@@ -55,20 +54,38 @@ jobs:
 
           try:
               with urllib.request.urlopen(request, timeout=30) as response:
-                  payload = json.loads(response.read().decode("utf-8"))
-                  print("Connexion Cito API : OK")
-                  print("Code HTTP :", response.status)
-                  print("Réponse reçue :", isinstance(payload, dict))
-                  print("Statut API :", payload.get("success", "non précisé"))
-                  matches = payload.get("data") or payload.get("matches") or []
-                  if isinstance(matches, list):
-                      print("Nombre de matchs renvoyés :", len(matches))
-                  else:
-                      print("Données reçues, format à examiner.")
+                  payload = json.loads(
+                      response.read().decode("utf-8")
+                  )
+
+              print("Connexion Cito API : OK")
+              print("Code HTTP :", response.status)
+              print("Format de la reponse :", type(payload).__name__)
+
+              if isinstance(payload, dict):
+                  print("Statut API :", payload.get("success", "non precise"))
+                  data = payload.get("data", payload.get("matches", []))
+              elif isinstance(payload, list):
+                  data = payload
+              else:
+                  raise SystemExit("Format de reponse inattendu.")
+
+              if not isinstance(data, list):
+                  print("La structure des donnees doit etre examinee.")
+                  print(json.dumps(payload, ensure_ascii=False)[:3000])
+                  raise SystemExit(1)
+
+              print("Matchs retournes :", len(data))
+
+              for match in data[:10]:
+                  print(json.dumps(match, ensure_ascii=False)[:1200])
+
+              print("Verification terminee. Aucun message Discord envoye.")
+
           except urllib.error.HTTPError as error:
-              print("Cito API a répondu avec le code HTTP :", error.code)
-              raise SystemExit("Le test API a échoué. Vérifie l'accès et la clé.")
+              print("Erreur HTTP Cito :", error.code)
+              raise SystemExit(1)
           except Exception as error:
-              print("Échec de la requête :", type(error).__name__)
+              print("Erreur :", type(error).__name__, str(error))
               raise SystemExit(1)
           PY
