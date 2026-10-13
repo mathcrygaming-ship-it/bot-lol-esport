@@ -740,12 +740,6 @@ async def resultats(
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
-if __name__ == "__main__":
-    if not TOKEN:
-        raise RuntimeError("Le secret DISCORD_TOKEN est manquant.")
-    bot.run(TOKEN)
-
-
 # ---------------------------------------------------------
 # /publier
 # Publie un message stylisé dans #worlds-2026
@@ -781,7 +775,6 @@ async def publier(
     couleur: app_commands.Choice[str] | None = None,
     image_url: str | None = None,
 ):
-    # Réserve la publication aux modérateurs autorisés.
     if interaction.guild is None:
         await interaction.response.send_message(
             "❌ Cette commande doit être utilisée sur le serveur Discord.",
@@ -791,13 +784,11 @@ async def publier(
 
     if not interaction.user.guild_permissions.manage_messages:
         await interaction.response.send_message(
-            "❌ Tu dois disposer de la permission Gérer les messages "
-            "pour publier une annonce.",
+            "❌ Tu dois disposer de la permission Gérer les messages.",
             ephemeral=True,
         )
         return
 
-    # Recherche le salon dans le serveur où la commande est utilisée.
     channel = discord.utils.get(
         interaction.guild.text_channels,
         name="worlds-2026",
@@ -805,32 +796,27 @@ async def publier(
 
     if channel is None:
         await interaction.response.send_message(
-            "❌ Le salon #worlds-2026 est introuvable. "
-            "Vérifie son nom exact.",
+            "❌ Le salon #worlds-2026 est introuvable.",
             ephemeral=True,
         )
         return
 
-    # Vérifie les droits du bot dans le salon.
     permissions = channel.permissions_for(interaction.guild.me)
 
     if not permissions.view_channel or not permissions.send_messages:
         await interaction.response.send_message(
-            "❌ Je ne peux pas écrire dans #worlds-2026. "
-            "Vérifie mes permissions Discord.",
+            "❌ Je ne peux pas écrire dans #worlds-2026. Vérifie mes permissions.",
             ephemeral=True,
         )
         return
 
     if not permissions.embed_links:
         await interaction.response.send_message(
-            "❌ Je dois disposer de la permission Intégrer des liens "
-            "dans #worlds-2026 pour publier ce format.",
+            "❌ Je dois pouvoir intégrer des liens dans #worlds-2026.",
             ephemeral=True,
         )
         return
 
-    # Palette visuelle WORLDS HUB.
     palette = {
         "cyan": discord.Color.from_rgb(25, 170, 220),
         "or": discord.Color.from_rgb(240, 190, 65),
@@ -841,7 +827,6 @@ async def publier(
 
     couleur_choisie = couleur.value if couleur else "cyan"
 
-    # Création de l'annonce stylisée.
     embed = discord.Embed(
         title=f"🏆 {titre}",
         description=texte,
@@ -877,8 +862,7 @@ async def publier(
         )
     except discord.Forbidden:
         await interaction.response.send_message(
-            "❌ Discord refuse la publication. "
-            "Vérifie les permissions du bot dans le salon.",
+            "❌ Discord refuse la publication. Vérifie les permissions du bot.",
             ephemeral=True,
         )
         return
@@ -894,3 +878,14 @@ async def publier(
         f"✅ Ton annonce **{titre}** a été publiée dans {channel.mention}.",
         ephemeral=True,
     )
+
+
+# ---------------------------------------------------------
+# DÉMARRAGE DU BOT
+# Ce bloc doit impérativement rester tout en bas de bot.py
+# ---------------------------------------------------------
+
+if __name__ == "__main__":
+    if not TOKEN:
+        raise RuntimeError("Le secret DISCORD_TOKEN est manquant.")
+    bot.run(TOKEN)
