@@ -19,6 +19,10 @@ GEMINI_URL = (
     "models/gemini-3.6-flash:generateContent"
 )
 
+# Sources officielles du format Worlds 2026
+WORLDS_PRIMER_URL = "https://lolesports.com/en-GB/news/worlds-2026-primer"
+WORLDS_UPDATE_URL = "https://lolesports.com/en-US/news/msi-and-worlds-updates"
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("worlds_hub")
 
@@ -32,7 +36,6 @@ MOIS = [
     "septembre", "octobre", "novembre", "décembre"
 ]
 
-# Limite prudente pour le texte de chaque résumé Discord.
 MAX_RECAP_CHARS = 3400
 
 
@@ -146,7 +149,6 @@ def safe_text(text, limit=MAX_RECAP_CHARS):
     if boundary >= int(limit * 0.65):
         shortened = shortened[:boundary + 1]
     else:
-        # Si aucune phrase complète n'est disponible, coupe au dernier espace.
         space = shortened.rfind(" ")
         if space > 0:
             shortened = shortened[:space].rstrip() + "…"
@@ -322,6 +324,10 @@ class WorldsHub(discord.Client):
 bot = WorldsHub()
 
 
+# ---------------------------------------------------------
+# /ping
+# ---------------------------------------------------------
+
 @bot.tree.command(name="ping", description="Vérifie si BOT LOL ESPORT répond.")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(
@@ -329,6 +335,189 @@ async def ping(interaction: discord.Interaction):
         ephemeral=True,
     )
 
+
+# ---------------------------------------------------------
+# /format
+# Guide détaillé et débutant des Worlds 2026
+# ---------------------------------------------------------
+
+@bot.tree.command(
+    name="format",
+    description="Guide complet du format officiel des Worlds 2026.",
+)
+async def format_worlds(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    pages = [
+        {
+            "title": "🏆 WORLDS 2026 | 1/5 • Comprendre le tournoi",
+            "description": (
+                "**Bienvenue dans le guide des Worlds !**\n"
+                "Les Worlds sont le championnat du monde annuel de "
+                "League of Legends. Les meilleures équipes des ligues "
+                "régionales s'y affrontent pour le titre mondial.\n\n"
+                "## 🗺️ Le parcours en trois phases\n"
+                "**1. Play-Ins • 15 au 18 octobre**\n"
+                "Quatre équipes jouent un tableau à double élimination. "
+                "Une seule équipe en sort qualifiée.\n\n"
+                "**2. Phase suisse • 23 au 31 octobre**\n"
+                "Seize équipes jouent un maximum de cinq manches. "
+                "Il faut trois victoires pour accéder à la phase finale. "
+                "Trois défaites entraînent l'élimination.\n\n"
+                "**3. Phase finale • 3 au 14 novembre**\n"
+                "Huit équipes s'affrontent en élimination directe, des "
+                "quarts de finale jusqu'à la grande finale.\n\n"
+                "## 👥 Combien d'équipes ?\n"
+                "19 équipes participent au tournoi. Quatre commencent en "
+                "Play-Ins. La gagnante rejoint les quinze équipes déjà "
+                "qualifiées pour la phase suisse, soit seize équipes.\n\n"
+                "Les Worlds 2026 se déroulent aux États-Unis."
+            ),
+            "footer": "Dates et format : LoL Esports / Riot Games",
+        },
+        {
+            "title": "⚔️ WORLDS 2026 | 2/5 • Les Play-Ins",
+            "description": (
+                "## 🎯 Quel est le but ?\n"
+                "Quatre équipes se disputent **une seule place** pour "
+                "la phase suisse. Chaque match de Play-Ins est un **BO5**.\n\n"
+                "## 🔁 Que signifie « double élimination » ?\n"
+                "Dans un tableau à double élimination, une équipe ne quitte "
+                "pas le tournoi après sa première défaite. Elle peut continuer "
+                "dans le tableau inférieur et tenter de gagner sa place.\n\n"
+                "En revanche, une deuxième défaite élimine l'équipe. "
+                "Le parcours exact dépend du tableau officiel et des résultats.\n\n"
+                "## 🧠 Exemple simple\n"
+                "• Une équipe gagne son premier match : elle continue dans "
+                "le tableau correspondant à sa victoire.\n"
+                "• Elle perd un match : elle peut encore avoir une possibilité "
+                "de rester en compétition.\n"
+                "• Elle subit une deuxième défaite : son tournoi s'arrête.\n\n"
+                "## 📌 À retenir\n"
+                "• 4 équipes au départ.\n"
+                "• Des séries en BO5.\n"
+                "• 1 seule équipe qualifiée pour la phase suisse.\n"
+                "• Les trois autres équipes ne rejoignent pas la phase suisse."
+            ),
+            "footer": "Play-Ins : 15–18 octobre 2026 • Riot Games",
+        },
+        {
+            "title": "🧮 WORLDS 2026 | 3/5 • La phase suisse",
+            "description": (
+                "## 🎯 L'objectif\n"
+                "Seize équipes commencent la phase suisse. Chaque équipe "
+                "cherche à atteindre **3 victoires** avant de subir **3 défaites**.\n\n"
+                "• **3 victoires :** qualification pour la phase finale.\n"
+                "• **3 défaites :** élimination du tournoi.\n"
+                "• Au maximum, une équipe joue 5 matchs dans cette phase.\n\n"
+                "## 🔄 Comment les adversaires sont-ils choisis ?\n"
+                "Au premier tour, les confrontations sont déterminées par "
+                "un tirage organisé selon les groupes de tirage officiels. "
+                "Deux équipes de la même région ne s'affrontent pas au "
+                "premier tour.\n\n"
+                "À partir du deuxième tour, les équipes sont appariées avec "
+                "des adversaires ayant le même bilan : par exemple, une équipe "
+                "à 1 victoire et 0 défaite rencontre une autre équipe au bilan "
+                "1–0. Les équipes ne rejouent pas contre un adversaire déjà "
+                "rencontré pendant cette phase.\n\n"
+                "Les rencontres entre équipes d'une même région sont possibles "
+                "à partir du deuxième tour.\n\n"
+                "## 🎮 BO1 ou BO3 ?\n"
+                "**BO1 :** un seul match joué, le gagnant remporte la rencontre.\n"
+                "**BO3 :** la première équipe à gagner deux parties remporte "
+                "la série. Les matchs qui déterminent la qualification ou "
+                "l'élimination sont en BO3 ; les autres sont en BO1."
+            ),
+            "footer": "Phase suisse : 23–31 octobre 2026 • Riot Games",
+        },
+        {
+            "title": "🏁 WORLDS 2026 | 4/5 • La phase finale",
+            "description": (
+                "## 👑 Les huit dernières équipes\n"
+                "Les huit équipes qualifiées depuis la phase suisse disputent "
+                "la phase finale. Le tableau fonctionne en **élimination directe**.\n\n"
+                "Cela signifie qu'une défaite met fin au parcours de l'équipe "
+                "dans le tournoi. Il n'existe pas de tableau inférieur à ce stade.\n\n"
+                "## 🥊 Les trois étapes\n"
+                "**Quarts de finale :** 8 équipes, 4 équipes gagnantes.\n\n"
+                "**Demi-finales :** 4 équipes, 2 équipes gagnantes.\n\n"
+                "**Grande finale :** les 2 dernières équipes se disputent "
+                "le titre de championne du monde.\n\n"
+                "Toutes les séries de la phase finale sont en **BO5**.\n\n"
+                "## 🎲 Comment se fait le tirage des quarts ?\n"
+                "Selon les règles annoncées pour 2026, les deux équipes "
+                "ayant terminé la phase suisse avec un bilan de 3–0 sont "
+                "appariées à deux équipes ayant terminé en 3–2. Les quatre "
+                "autres équipes qualifiées sont ensuite tirées au sort "
+                "pour former les deux autres quarts de finale.\n\n"
+                "## 📅 Les dates\n"
+                "• Quarts de finale : 3–6 novembre.\n"
+                "• Demi-finales : 7–8 novembre.\n"
+                "• Grande finale : 14 novembre 2026."
+            ),
+            "footer": "Phase finale : novembre 2026 • Riot Games",
+        },
+        {
+            "title": "📖 WORLDS 2026 | 5/5 • Le dictionnaire du débutant",
+            "description": (
+                "## 🗣️ Les termes à connaître\n"
+                "**BO1 – Best of 1 :** une seule partie. Le gagnant remporte "
+                "le match.\n\n"
+                "**BO3 – Best of 3 :** série en deux manches gagnantes. "
+                "Il faut gagner 2 parties pour remporter la série. "
+                "Maximum : 3 parties.\n\n"
+                "**BO5 – Best of 5 :** série en trois manches gagnantes. "
+                "Il faut gagner 3 parties. Maximum : 5 parties.\n\n"
+                "**Phase suisse :** format où les équipes rencontrent des "
+                "adversaires ayant un bilan comparable, sans affronter "
+                "toutes les autres équipes.\n\n"
+                "**Bilan 2–1 :** deux victoires et une défaite.\n\n"
+                "**Qualification :** l'équipe gagne le droit de passer "
+                "à la phase suivante.\n\n"
+                "**Élimination :** l'équipe n'a plus la possibilité de "
+                "remporter le tournoi.\n\n"
+                "**Tirage / seed :** le tirage établit les confrontations ; "
+                "un seed désigne la place ou le statut attribué à une équipe "
+                "selon les règles de la compétition.\n\n"
+                "## 🧠 Un exemple pour la phase suisse\n"
+                "Une équipe gagne ses trois premiers matchs : elle atteint "
+                "3–0 et se qualifie. Une autre gagne deux matchs puis perd "
+                "trois fois avant d'atteindre trois victoires : elle termine "
+                "à 2–3 et est éliminée. Une équipe peut donc être éliminée "
+                "avant d'avoir joué cinq matchs.\n\n"
+                "## 🔎 Sources officielles\n"
+                f"[Worlds 2026 Primer]({WORLDS_PRIMER_URL})\n"
+                f"[Mise à jour officielle du format]({WORLDS_UPDATE_URL})\n\n"
+                "Ce guide décrit le format annoncé par Riot Games. Les "
+                "horaires et les confrontations doivent être vérifiés dans "
+                "le calendrier officiel."
+            ),
+            "footer": "WORLDS HUB • Guide explicatif • Saison 2026",
+        },
+    ]
+
+    try:
+        for page in pages:
+            embed = discord.Embed(
+                title=page["title"],
+                description=page["description"],
+                color=discord.Color.from_rgb(25, 170, 220),
+            )
+            embed.set_footer(text=page["footer"])
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+    except discord.HTTPException:
+        logger.exception("Erreur d'envoi du guide /format")
+        await interaction.followup.send(
+            "⚠️ Le guide n'a pas pu être envoyé en entier. "
+            "Relance `/format` dans quelques instants.",
+            ephemeral=True,
+        )
+
+
+# ---------------------------------------------------------
+# /prochains_matchs
+# ---------------------------------------------------------
 
 @bot.tree.command(
     name="prochains_matchs",
@@ -409,6 +598,10 @@ async def prochains_matchs(
     embed.set_footer(text="Calendrier Cito • Fuseau Europe/Paris")
     await interaction.followup.send(embed=embed, ephemeral=True)
 
+
+# ---------------------------------------------------------
+# /resultats
+# ---------------------------------------------------------
 
 @bot.tree.command(
     name="resultats",
@@ -494,7 +687,6 @@ async def resultats(
 
     matches.sort(key=lambda item: item["date"])
 
-    # Chaque match est envoyé séparément pour respecter les limites Discord.
     await interaction.followup.send(
         content=(
             f"📰 **WORLDS 2026 | "
@@ -506,7 +698,7 @@ async def resultats(
     for match in matches[:5]:
         try:
             text = await generate_recap(build_prompt(match))
-        except (aiohttp.ClientError, TimeoutError, ValueError, RuntimeError) as exc:
+        except (aiohttp.ClientError, TimeoutError, ValueError, RuntimeError):
             logger.exception("Erreur génération Gemini")
             text = (
                 "⚠️ Le résumé IA n'a pas pu être généré.\n\n"
