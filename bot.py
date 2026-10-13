@@ -15,7 +15,7 @@ PARIS = ZoneInfo("Europe/Paris")
 SCHEDULE_URL = "https://api.citoapi.com/api/v1/lol/leagues/lol-worlds/schedule"
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-2.5-flash:generateContent"
+    "models/gemini-3.6-flash:generateContent"
 )
 
 logging.basicConfig(level=logging.INFO)
