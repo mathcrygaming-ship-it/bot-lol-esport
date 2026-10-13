@@ -785,14 +785,16 @@ async def publier(
     image_url: str = "",
     style: str = "immersive",
 ):
-    # Vérification des droits
-    if not interaction.user.guild_permissions.manage_messages:
+    # Vérification : seul Mathcry peut publier
+    OWNER_ID = 483957046278881301
+
+    if interaction.user.id != OWNER_ID:
         await interaction.response.send_message(
-            "⛔ Tu dois disposer de la permission **Gérer les messages** "
-            "pour publier une annonce.",
+            "⛔ Commande réservée au propriétaire de WORLDS HUB.",
             ephemeral=True,
         )
         return
+
 
     # Recherche du salon
     channel = discord.utils.get(
