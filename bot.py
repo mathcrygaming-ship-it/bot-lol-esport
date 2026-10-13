@@ -795,7 +795,10 @@ async def publier(
         return
 
     # Recherche du salon
-    channel = get_worlds_channel(interaction.guild)
+    channel = discord.utils.get(
+    interaction.guild.text_channels,
+    name="worlds-2026"
+) if interaction.guild else None
 
     if channel is None:
         await interaction.response.send_message(
