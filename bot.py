@@ -744,3 +744,153 @@ if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("Le secret DISCORD_TOKEN est manquant.")
     bot.run(TOKEN)
+
+
+# ---------------------------------------------------------
+# /publier
+# Publie un message stylisé dans #worlds-2026
+# ---------------------------------------------------------
+
+COULEURS_PUBLICATION = [
+    app_commands.Choice(name="Cyan Worlds Hub", value="cyan"),
+    app_commands.Choice(name="Or - Grande annonce", value="or"),
+    app_commands.Choice(name="Rouge - Alerte", value="rouge"),
+    app_commands.Choice(name="Violet - Analyse", value="violet"),
+    app_commands.Choice(name="Vert - Résultat", value="vert"),
+]
+
+
+@bot.tree.command(
+    name="publier",
+    description="Publie une annonce personnalisée dans #worlds-2026.",
+)
+@app_commands.default_permissions(manage_messages=True)
+@app_commands.describe(
+    titre="Titre principal de l'annonce",
+    texte="Contenu du message. Markdown Discord accepté.",
+    sous_titre="Petit texte complémentaire facultatif",
+    couleur="Couleur visuelle de l'annonce",
+    image_url="URL directe d'une image facultative",
+)
+@app_commands.choices(couleur=COULEURS_PUBLICATION)
+async def publier(
+    interaction: discord.Interaction,
+    titre: app_commands.Range[str, 1, 256],
+    texte: app_commands.Range[str, 1, 4000],
+    sous_titre: app_commands.Range[str, 1, 256] | None = None,
+    couleur: app_commands.Choice[str] | None = None,
+    image_url: str | None = None,
+):
+    # Réserve la publication aux modérateurs autorisés.
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "❌ Cette commande doit être utilisée sur le serveur Discord.",
+            ephemeral=True,
+        )
+        return
+
+    if not interaction.user.guild_permissions.manage_messages:
+        await interaction.response.send_message(
+            "❌ Tu dois disposer de la permission Gérer les messages "
+            "pour publier une annonce.",
+            ephemeral=True,
+        )
+        return
+
+    # Recherche le salon dans le serveur où la commande est utilisée.
+    channel = discord.utils.get(
+        interaction.guild.text_channels,
+        name="worlds-2026",
+    )
+
+    if channel is None:
+        await interaction.response.send_message(
+            "❌ Le salon #worlds-2026 est introuvable. "
+            "Vérifie son nom exact.",
+            ephemeral=True,
+        )
+        return
+
+    # Vérifie les droits du bot dans le salon.
+    permissions = channel.permissions_for(interaction.guild.me)
+
+    if not permissions.view_channel or not permissions.send_messages:
+        await interaction.response.send_message(
+            "❌ Je ne peux pas écrire dans #worlds-2026. "
+            "Vérifie mes permissions Discord.",
+            ephemeral=True,
+        )
+        return
+
+    if not permissions.embed_links:
+        await interaction.response.send_message(
+            "❌ Je dois disposer de la permission Intégrer des liens "
+            "dans #worlds-2026 pour publier ce format.",
+            ephemeral=True,
+        )
+        return
+
+    # Palette visuelle WORLDS HUB.
+    palette = {
+        "cyan": discord.Color.from_rgb(25, 170, 220),
+        "or": discord.Color.from_rgb(240, 190, 65),
+        "rouge": discord.Color.from_rgb(220, 55, 65),
+        "violet": discord.Color.from_rgb(145, 85, 220),
+        "vert": discord.Color.from_rgb(55, 185, 110),
+    }
+
+    couleur_choisie = couleur.value if couleur else "cyan"
+
+    # Création de l'annonce stylisée.
+    embed = discord.Embed(
+        title=f"🏆 {titre}",
+        description=texte,
+        color=palette[couleur_choisie],
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    if sous_titre:
+        embed.add_field(
+            name="📌 À retenir",
+            value=sous_titre,
+            inline=False,
+        )
+
+    if image_url:
+        if not image_url.startswith(("https://", "http://")):
+            await interaction.response.send_message(
+                "❌ L'image doit utiliser une URL HTTP ou HTTPS valide.",
+                ephemeral=True,
+            )
+            return
+
+        embed.set_image(url=image_url)
+
+    embed.set_footer(
+        text="WORLDS HUB • League of Legends Worlds 2026"
+    )
+
+    try:
+        await channel.send(
+            embed=embed,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "❌ Discord refuse la publication. "
+            "Vérifie les permissions du bot dans le salon.",
+            ephemeral=True,
+        )
+        return
+    except discord.HTTPException:
+        logger.exception("Erreur lors de la publication WORLDS HUB")
+        await interaction.response.send_message(
+            "❌ La publication a échoué. Réessaie avec un message plus court.",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.send_message(
+        f"✅ Ton annonce **{titre}** a été publiée dans {channel.mention}.",
+        ephemeral=True,
+    )
