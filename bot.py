@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 from datetime import datetime, timezone, date
 from zoneinfo import ZoneInfo
 
@@ -30,6 +31,9 @@ MOIS = [
     "mai", "juin", "juillet", "août",
     "septembre", "octobre", "novembre", "décembre"
 ]
+
+# Limite prudente pour le texte de chaque résumé Discord.
+MAX_RECAP_CHARS = 3400
 
 
 def format_date(value):
@@ -118,12 +122,38 @@ def event_score(event):
         return str(score.get("display") or score.get("value") or "")
     if score is not None:
         return str(score)
-
-    for key in ("result", "teams"):
-        value = event.get(key)
-        if key == "result" and isinstance(value, str):
-            return value
+    result = event.get("result")
+    if isinstance(result, str):
+        return result
     return ""
+
+
+def safe_text(text, limit=MAX_RECAP_CHARS):
+    """Évite les textes trop longs et privilégie une fin de phrase."""
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+
+    shortened = text[:limit - 1]
+    boundaries = [
+        shortened.rfind(". "),
+        shortened.rfind("! "),
+        shortened.rfind("? "),
+        shortened.rfind("\n"),
+    ]
+    boundary = max(boundaries)
+
+    if boundary >= int(limit * 0.65):
+        shortened = shortened[:boundary + 1]
+    else:
+        # Si aucune phrase complète n'est disponible, coupe au dernier espace.
+        space = shortened.rfind(" ")
+        if space > 0:
+            shortened = shortened[:space].rstrip() + "…"
+        else:
+            shortened = shortened.rstrip() + "…"
+
+    return shortened.strip()
 
 
 async def fetch_schedule():
@@ -140,8 +170,11 @@ async def fetch_schedule():
             },
         ) as response:
             if response.status != 200:
-                raise RuntimeError(f"Erreur calendrier Cito : HTTP {response.status}")
+                raise RuntimeError(
+                    f"Erreur calendrier Cito : HTTP {response.status}"
+                )
             payload = await response.json()
+
     return extract_events(payload)
 
 
@@ -149,34 +182,128 @@ async def generate_recap(prompt):
     if not GEMINI_API_KEY:
         raise RuntimeError("La variable GEMINI_API_KEY manque sur FadeHost.")
 
-    timeout = aiohttp.ClientTimeout(total=40)
+    timeout = aiohttp.ClientTimeout(total=60)
+
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(
             GEMINI_URL,
             params={"key": GEMINI_API_KEY},
             json={
-                "contents": [{
-                    "parts": [{"text": prompt}]
-                }],
+                "contents": [{"parts": [{"text": prompt}]}],
                 "generationConfig": {
-                    "temperature": 0.85,
-                    "maxOutputTokens": 1100,
+                    "temperature": 0.55,
+                    "maxOutputTokens": 1800,
                 },
             },
         ) as response:
             if response.status != 200:
                 details = await response.text()
-                logger.error("Erreur Gemini HTTP %s: %s", response.status, details[:500])
+                logger.error(
+                    "Erreur Gemini HTTP %s: %s",
+                    response.status,
+                    details[:500],
+                )
                 raise RuntimeError(
                     f"Gemini a refusé la requête (HTTP {response.status}). "
-                    "Vérifie la clé, le modèle et les quotas."
+                    "Vérifie la disponibilité du service et les quotas."
                 )
+
             payload = await response.json()
 
-    try:
-        return payload["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except (KeyError, IndexError, TypeError):
-        raise RuntimeError("Gemini n'a pas renvoyé de texte exploitable.")
+    candidates = payload.get("candidates") or []
+    if not candidates:
+        raise RuntimeError("Gemini n'a renvoyé aucun résumé exploitable.")
+
+    candidate = candidates[0]
+    parts = candidate.get("content", {}).get("parts", [])
+    text = "\n".join(
+        part.get("text", "")
+        for part in parts
+        if isinstance(part, dict) and part.get("text")
+    ).strip()
+
+    if not text:
+        reason = candidate.get("finishReason", "inconnu")
+        raise RuntimeError(
+            f"Gemini n'a pas produit de texte exploitable (motif : {reason})."
+        )
+
+    finish_reason = candidate.get("finishReason", "")
+    if finish_reason == "MAX_TOKENS":
+        logger.warning("Gemini a atteint sa limite de génération.")
+
+    return safe_text(text)
+
+
+def build_prompt(match):
+    if match["state"] == "terminé":
+        mode = (
+            "Le match est terminé. Résume uniquement les résultats et événements "
+            "réellement présents dans les données. Si le score détaillé ou les "
+            "moments clés manquent, indique-le. Ne reconstitue jamais le déroulé."
+        )
+    elif match["state"] == "en cours":
+        mode = (
+            "Le match est en cours. Ne donne aucun résultat final non confirmé. "
+            "Présente seulement les informations disponibles et précise les "
+            "éléments manquants."
+        )
+    else:
+        mode = (
+            "Le match est à venir. Écris un avant-match énergique. Ne prétends "
+            "pas connaître l'avenir. N'invente ni enjeu de qualification, ni "
+            "élimination, ni historique, ni forme récente, ni actualité. "
+            "Si ces informations ne sont pas dans les données, dis qu'elles "
+            "restent à confirmer. Le format du match est inconnu s'il n'est "
+            "pas explicitement fourni."
+        )
+
+    raw_data = str(match["raw"])[:5000]
+
+    return f"""
+Tu es WORLDS HUB, journaliste esport spécialisé dans League of Legends.
+Écris en français avec un ton dynamique, précis et naturel, adapté à Discord.
+
+RÈGLES ABSOLUES DE FIABILITÉ :
+- Les seules sources disponibles sont les données fournies ci-dessous.
+- Tu n'as pas d'accès garanti aux actualités ou aux statistiques en direct.
+- N'invente aucun score, format Bo1/Bo3/Bo5, classement, résultat, historique,
+  enjeu, qualification, élimination, statistique, citation ou événement.
+- Le nom d'une phase ne suffit pas à prouver les enjeux d'un match.
+- N'annonce pas qu'un match est décisif sans preuve explicite.
+- Ne transforme pas une donnée absente en fait probable.
+- Distingue clairement les faits confirmés et les informations inconnues.
+- Si une information importante manque, indique brièvement « non confirmé
+  par les données disponibles ».
+- Ne répète pas ces avertissements à chaque paragraphe.
+- Ne prétends pas avoir consulté des sources que tu n'as pas reçues.
+
+RENCONTRE
+Équipe 1 : {match['team1']}
+Équipe 2 : {match['team2']}
+Date française : {date_fr(match['date'])}
+Phase indiquée par l'API : {match['stage']}
+État indiqué par l'API : {match['state']}
+Score indiqué par l'API : {match['score'] or 'non disponible'}
+Format du match : non confirmé, sauf présence explicite dans les données brutes.
+
+DONNÉES BRUTES FOURNIES PAR L'API :
+{raw_data}
+
+CONSIGNE POUR CETTE RENCONTRE :
+{mode}
+
+STRUCTURE SOUHAITÉE :
+1. Un titre accrocheur.
+2. Une fiche du match avec uniquement les informations confirmées.
+3. Une analyse adaptée à l'état du match.
+4. Une courte conclusion qui distingue les certitudes des inconnues.
+
+Garde le style éditorial de WORLDS HUB, avec quelques emojis bien placés.
+Évite les longues introductions, les répétitions et les formulations creuses.
+Vise environ 2200 à 2800 caractères au maximum.
+Termine toutes tes phrases. Ne t'arrête pas en plein milieu d'une idée.
+"""
 
 
 class WorldsHub(discord.Client):
@@ -199,13 +326,13 @@ bot = WorldsHub()
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(
         "🏆 **WORLDS HUB est opérationnel !**",
-        ephemeral=True
+        ephemeral=True,
     )
 
 
 @bot.tree.command(
     name="prochains_matchs",
-    description="Affiche les prochaines rencontres des Worlds 2026."
+    description="Affiche les prochaines rencontres des Worlds 2026.",
 )
 @app_commands.describe(nombre="Nombre de matchs à afficher")
 @app_commands.choices(nombre=[
@@ -215,7 +342,7 @@ async def ping(interaction: discord.Interaction):
 ])
 async def prochains_matchs(
     interaction: discord.Interaction,
-    nombre: app_commands.Choice[int] | None = None
+    nombre: app_commands.Choice[int] | None = None,
 ):
     await interaction.response.defer(ephemeral=True, thinking=True)
 
@@ -225,7 +352,7 @@ async def prochains_matchs(
         logger.exception("Erreur récupération calendrier")
         await interaction.followup.send(
             f"❌ Impossible de récupérer le calendrier : {exc}",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
@@ -235,10 +362,12 @@ async def prochains_matchs(
     for event in events:
         if not isinstance(event, dict):
             continue
+
         start = format_date(
             event.get("startTime") or event.get("start_time")
             or event.get("scheduledAt") or event.get("scheduled_at")
         )
+
         if not start or start.astimezone(timezone.utc) <= now:
             continue
         if event_state(event) != "à venir":
@@ -257,7 +386,7 @@ async def prochains_matchs(
     if not upcoming:
         await interaction.followup.send(
             "📅 Aucun prochain match trouvé dans le calendrier des Worlds 2026.",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
@@ -267,14 +396,14 @@ async def prochains_matchs(
             "**Championnat du monde de League of Legends 2026**\n"
             "🕒 Horaires en heure française."
         ),
-        color=discord.Color.from_rgb(25, 170, 220)
+        color=discord.Color.from_rgb(25, 170, 220),
     )
 
     for match in upcoming:
         embed.add_field(
             name=f"{match['team1']} ⚔️ {match['team2']}",
             value=f"📅 {date_fr(match['date'])}\n🏁 {match['stage']}",
-            inline=False
+            inline=False,
         )
 
     embed.set_footer(text="Calendrier Cito • Fuseau Europe/Paris")
@@ -283,34 +412,32 @@ async def prochains_matchs(
 
 @bot.tree.command(
     name="resultats",
-    description="Récapitulatif IA des matchs des Worlds pour une date."
+    description="Récapitulatif IA des matchs des Worlds pour une date.",
 )
 @app_commands.describe(
     jour="Jour du mois (ex. 15)",
-    mois="Mois (ex. 10 pour octobre)",
-    annee="Année (ex. 2026)"
+    mois="Mois",
+    annee="Année (2026)",
 )
-@app_commands.choices(
-    mois=[
-        app_commands.Choice(name="Janvier", value=1),
-        app_commands.Choice(name="Février", value=2),
-        app_commands.Choice(name="Mars", value=3),
-        app_commands.Choice(name="Avril", value=4),
-        app_commands.Choice(name="Mai", value=5),
-        app_commands.Choice(name="Juin", value=6),
-        app_commands.Choice(name="Juillet", value=7),
-        app_commands.Choice(name="Août", value=8),
-        app_commands.Choice(name="Septembre", value=9),
-        app_commands.Choice(name="Octobre", value=10),
-        app_commands.Choice(name="Novembre", value=11),
-        app_commands.Choice(name="Décembre", value=12),
-    ]
-)
+@app_commands.choices(mois=[
+    app_commands.Choice(name="Janvier", value=1),
+    app_commands.Choice(name="Février", value=2),
+    app_commands.Choice(name="Mars", value=3),
+    app_commands.Choice(name="Avril", value=4),
+    app_commands.Choice(name="Mai", value=5),
+    app_commands.Choice(name="Juin", value=6),
+    app_commands.Choice(name="Juillet", value=7),
+    app_commands.Choice(name="Août", value=8),
+    app_commands.Choice(name="Septembre", value=9),
+    app_commands.Choice(name="Octobre", value=10),
+    app_commands.Choice(name="Novembre", value=11),
+    app_commands.Choice(name="Décembre", value=12),
+])
 async def resultats(
     interaction: discord.Interaction,
     jour: app_commands.Range[int, 1, 31],
     mois: app_commands.Choice[int],
-    annee: app_commands.Range[int, 2026, 2026] = 2026
+    annee: app_commands.Range[int, 2026, 2026] = 2026,
 ):
     await interaction.response.defer(ephemeral=True, thinking=True)
 
@@ -319,7 +446,7 @@ async def resultats(
     except ValueError:
         await interaction.followup.send(
             "❌ Cette date n'existe pas. Vérifie le jour et le mois.",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
@@ -329,18 +456,21 @@ async def resultats(
         logger.exception("Erreur calendrier pour /resultats")
         await interaction.followup.send(
             f"❌ Impossible de récupérer les matchs : {exc}",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
     matches = []
+
     for event in events:
         if not isinstance(event, dict):
             continue
+
         start = format_date(
             event.get("startTime") or event.get("start_time")
             or event.get("scheduledAt") or event.get("scheduled_at")
         )
+
         if not start or start.date() != selected_date:
             continue
 
@@ -356,89 +486,66 @@ async def resultats(
 
     if not matches:
         await interaction.followup.send(
-            f"📅 Aucun match trouvé pour le {jour} {MOIS[mois.value - 1]} {annee} "
-            "dans le calendrier Cito.",
-            ephemeral=True
+            f"📅 Aucun match trouvé pour le {jour} "
+            f"{MOIS[mois.value - 1]} {annee} dans le calendrier Cito.",
+            ephemeral=True,
         )
         return
 
     matches.sort(key=lambda item: item["date"])
-    summaries = []
+
+    # Chaque match est envoyé séparément pour respecter les limites Discord.
+    await interaction.followup.send(
+        content=(
+            f"📰 **WORLDS 2026 | "
+            f"{jour:02d}/{mois.value:02d}/{annee}**"
+        ),
+        ephemeral=True,
+    )
 
     for match in matches[:5]:
-        if match["state"] == "terminé":
-            mode = (
-                "MATCH TERMINÉ. Fais un récapitulatif uniquement à partir des "
-                "faits fournis. Si le score ou les événements détaillés manquent, "
-                "indique clairement cette limite et ne les invente pas."
-            )
-        elif match["state"] == "en cours":
-            mode = (
-                "MATCH EN COURS. Ne présente aucun score final. Fais un point "
-                "d'avant-match/mi-match seulement avec les informations disponibles."
-            )
-        else:
-            mode = (
-                "MATCH À VENIR. Crée une présentation très hype, précise les enjeux "
-                "uniquement s'ils sont établis dans les données. Ne prétends pas "
-                "connaître les résultats futurs. Mentionne les informations manquantes."
-            )
-
-        prompt = f"""
-Tu es WORLDS HUB, journaliste esport League of Legends spécialisé dans les Worlds.
-Tu écris en français, avec une énergie forte, un ton naturel et une mise en page
-adaptée à Discord. Le texte doit être original, vivant et informatif.
-N'invente JAMAIS de scores, de faits de match, d'historique de confrontations,
-de classement, de qualification, de blessure, de déclaration ou d'actualité.
-Tu ne disposes pas ici d'un accès garanti à l'actualité en direct : distingue
-les faits présents dans les données des informations inconnues.
-Tu peux expliquer les enjeux généraux, mais signale ce qui doit être confirmé.
-Évite les répétitions et reste sous 1800 caractères.
-
-Rencontre : {match['team1']} contre {match['team2']}
-Date française : {date_fr(match['date'])}
-Phase : {match['stage']}
-État : {match['state']}
-Score fourni par l'API : {match['score'] or 'non disponible'}
-Données brutes de l'API : {str(match['raw'])[:3500]}
-
-Consigne spécifique : {mode}
-
-Produis un récapitulatif autonome avec un titre, les informations disponibles,
-puis une analyse adaptée à l'état de la rencontre. Si le match est terminé mais
-que les événements importants ne figurent pas dans les données, sois transparent.
-"""
         try:
-            text = await generate_recap(prompt)
+            text = await generate_recap(build_prompt(match))
         except (aiohttp.ClientError, TimeoutError, ValueError, RuntimeError) as exc:
             logger.exception("Erreur génération Gemini")
             text = (
-                f"⚠️ Le résumé IA n'a pas pu être généré : {exc}\n"
+                "⚠️ Le résumé IA n'a pas pu être généré.\n\n"
                 f"**{match['team1']} contre {match['team2']}**\n"
-                f"📅 {date_fr(match['date'])} • {match['stage']}\n"
-                f"État : {match['state']} • Score : {match['score'] or 'indisponible'}"
+                f"📅 {date_fr(match['date'])}\n"
+                f"🏁 Phase : {match['stage']}\n"
+                f"État : {match['state']}\n"
+                f"Score : {match['score'] or 'non disponible'}\n\n"
+                "Les informations détaillées ne sont pas disponibles pour le moment."
             )
 
         embed = discord.Embed(
             title=f"🏆 {match['team1']} vs {match['team2']}",
-            description=text[:4000],
-            color=discord.Color.from_rgb(25, 170, 220)
+            description=safe_text(text, MAX_RECAP_CHARS),
+            color=discord.Color.from_rgb(25, 170, 220),
         )
+
         embed.add_field(
             name="📅 Rencontre",
-            value=f"{date_fr(match['date'])}\n🏁 {match['stage']}\nÉtat : {match['state']}",
-            inline=False
+            value=(
+                f"{date_fr(match['date'])}\n"
+                f"🏁 {match['stage']}\n"
+                f"État : {match['state']}"
+            ),
+            inline=False,
         )
-        if match["score"]:
-            embed.add_field(name="🎯 Score communiqué", value=match["score"], inline=False)
-        embed.set_footer(text="WORLDS HUB • Résumé IA • Vérifier les faits non confirmés")
-        summaries.append(embed)
 
-    await interaction.followup.send(
-        content=f"📰 **Worlds 2026 | {jour:02d}/{mois.value:02d}/{annee}**",
-        embeds=summaries,
-        ephemeral=True
-    )
+        if match["score"]:
+            embed.add_field(
+                name="🎯 Score communiqué par l'API",
+                value=match["score"][:1000],
+                inline=False,
+            )
+
+        embed.set_footer(
+            text="WORLDS HUB • Données Cito • Faits non confirmés à vérifier"
+        )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 if __name__ == "__main__":
