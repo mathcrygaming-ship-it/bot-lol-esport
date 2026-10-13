@@ -880,185 +880,207 @@ async def publier(
     )
 
 
-# ---------------------------------------------------------
-# /publier
-# Annonces lisibles pour WORLDS HUB
-# ---------------------------------------------------------
-
-STYLES_PUBLICATION = [
-    app_commands.Choice(name="Annonce immersive (grand titre)", value="immersive"),
-    app_commands.Choice(name="Embed classique", value="embed"),
-]
-
-COULEURS_PUBLICATION = [
-    app_commands.Choice(name="Cyan Worlds Hub", value="cyan"),
-    app_commands.Choice(name="Or - Grande annonce", value="or"),
-    app_commands.Choice(name="Rouge - Alerte", value="rouge"),
-    app_commands.Choice(name="Violet - Analyse", value="violet"),
-    app_commands.Choice(name="Vert - Résultat", value="vert"),
-]
-
+# ============================================================
+# COMMANDE /PUBLIER
+# ============================================================
 
 @bot.tree.command(
     name="publier",
-    description="Publie une annonce stylisée dans #worlds-2026.",
+    description="Publie une annonce personnalisée dans worlds-2026.",
 )
-@app_commands.default_permissions(manage_messages=True)
 @app_commands.describe(
-    titre="Grand titre de l'annonce",
-    texte="Contenu du message",
-    style="Choisis le style de publication",
-    sous_titre="Phrase d'accroche facultative",
-    couleur="Couleur de l'annonce",
-    image_url="URL directe d'une image facultative",
+    titre="Titre principal de l'annonce.",
+    texte="Contenu du message.",
+    sous_titre="Sous-titre facultatif.",
+    couleur="Couleur de l'annonce.",
+    image_url="URL facultative d'une image.",
+    style="Présentation immersive ou embed classique.",
 )
 @app_commands.choices(
-    style=STYLES_PUBLICATION,
-    couleur=COULEURS_PUBLICATION,
+    couleur=[
+        app_commands.Choice(name="Or Worlds", value="or"),
+        app_commands.Choice(name="Bleu", value="bleu"),
+        app_commands.Choice(name="Rouge", value="rouge"),
+        app_commands.Choice(name="Vert", value="vert"),
+        app_commands.Choice(name="Violet", value="violet"),
+        app_commands.Choice(name="Blanc", value="blanc"),
+    ],
+    style=[
+        app_commands.Choice(
+            name="Immersif : grands titres et texte Markdown",
+            value="immersive",
+        ),
+        app_commands.Choice(
+            name="Embed : annonce encadrée classique",
+            value="embed",
+        ),
+    ],
 )
+@app_commands.default_permissions(manage_messages=True)
 async def publier(
     interaction: discord.Interaction,
-    titre: app_commands.Range[str, 1, 200],
-    texte: app_commands.Range[str, 1, 4000],
-    style: app_commands.Choice[str],
-    sous_titre: app_commands.Range[str, 1, 250] | None = None,
-    couleur: app_commands.Choice[str] | None = None,
-    image_url: str | None = None,
+    titre: app_commands.Range[str, 1, 180],
+    texte: app_commands.Range[str, 1, 3500],
+    sous_titre: app_commands.Range[str, 1, 250] = "",
+    couleur: str = "or",
+    image_url: str = "",
+    style: str = "immersive",
 ):
-    if interaction.guild is None:
-        await interaction.response.send_message(
-            "❌ Utilise cette commande sur ton serveur Discord.",
-            ephemeral=True,
-        )
-        return
-
+    # Vérification des droits
     if not interaction.user.guild_permissions.manage_messages:
         await interaction.response.send_message(
-            "❌ Tu dois avoir la permission Gérer les messages.",
+            "⛔ Tu dois disposer de la permission **Gérer les messages** "
+            "pour publier une annonce.",
             ephemeral=True,
         )
         return
 
-    channel = discord.utils.get(
-        interaction.guild.text_channels,
-        name="worlds-2026",
-    )
+    # Recherche du salon
+    channel = get_worlds_channel(interaction.guild)
 
     if channel is None:
         await interaction.response.send_message(
-            "❌ Le salon #worlds-2026 est introuvable.",
+            f"❌ Je ne trouve pas le salon **#{TARGET_CHANNEL_NAME}** "
+            "sur ce serveur.",
             ephemeral=True,
         )
         return
 
-    permissions = channel.permissions_for(interaction.guild.me)
-
-    if not permissions.view_channel or not permissions.send_messages:
-        await interaction.response.send_message(
-            "❌ Je ne peux pas écrire dans #worlds-2026.",
-            ephemeral=True,
-        )
-        return
-
-    if style.value == "embed" and not permissions.embed_links:
-        await interaction.response.send_message(
-            "❌ Je dois avoir la permission Intégrer des liens.",
-            ephemeral=True,
-        )
-        return
-
+    # Palette de couleurs
     palette = {
-        "cyan": 0x19AADA,
-        "or": 0xF0BE41,
-        "rouge": 0xDC3741,
-        "violet": 0x9155DC,
-        "vert": 0x37B96E,
+        "or": discord.Color.gold(),
+        "bleu": discord.Color.blue(),
+        "rouge": discord.Color.red(),
+        "vert": discord.Color.green(),
+        "violet": discord.Color.purple(),
+        "blanc": discord.Color.from_rgb(240, 240, 240),
     }
 
-    couleur_choisie = couleur.value if couleur else "cyan"
-    couleur_hex = palette[couleur_choisie]
+    selected_color = palette.get(couleur, discord.Color.gold())
 
-    if image_url and not image_url.startswith(("https://", "http://")):
+    titre = titre.strip()
+    texte = texte.strip()
+    sous_titre = sous_titre.strip()
+    image_url = image_url.strip()
+
+    # Vérification simple de l'URL de l'image
+    if image_url and not re.match(r"^https?://", image_url, re.IGNORECASE):
         await interaction.response.send_message(
-            "❌ L'image doit avoir une URL HTTP ou HTTPS.",
+            "⚠️ L'image doit utiliser une URL commençant par `https://` "
+            "ou `http://`.",
             ephemeral=True,
         )
         return
 
-    try:
-        if style.value == "immersive":
-            # Discord affiche les titres Markdown en plus grand.
-            contenu = f"# 🏆 {titre}\n"
+    # --------------------------------------------------------
+    # STYLE IMMERSIF
+    # Les titres Markdown sont affichés en grand dans Discord.
+    # --------------------------------------------------------
+    if style == "immersive":
+        content_parts = [
+            f"# {titre}",
+        ]
 
-            if sous_titre:
-                contenu += f"## {sous_titre}\n"
+        if sous_titre:
+            content_parts.append(f"## {sous_titre}")
 
-            contenu += f"\n{texte}\n"
+        content_parts.append(texte)
 
-            if image_url:
-                contenu += f"\n{image_url}"
+        if image_url:
+            content_parts.append(image_url)
 
-            contenu += "\n\n━━━━━━━━━━━━━━━━━━━━\n"
-            contenu += "🌐 **WORLDS HUB** ・ LEAGUE OF LEGENDS WORLDS 2026"
+        content = "\n\n".join(content_parts)
 
+        # Discord limite le contenu d'un message à 2000 caractères.
+        if len(content) > 2000:
+            await interaction.response.send_message(
+                "⚠️ Le message immersif dépasse la limite de 2 000 "
+                "caractères de Discord. Raccourcis le titre, le sous-titre "
+                "ou le texte, puis réessaie.",
+                ephemeral=True,
+            )
+            return
+
+        try:
             await channel.send(
-                content=contenu,
+                content=content,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
 
-        else:
-            embed = discord.Embed(
-                title=f"🏆 {titre}",
-                description=texte,
-                color=discord.Color(couleur_hex),
-                timestamp=datetime.now(timezone.utc),
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ Je n'ai pas la permission d'envoyer des messages "
+                "dans le salon worlds-2026.",
+                ephemeral=True,
             )
+            return
 
-            if sous_titre:
-                embed.add_field(
-                    name="📌 À RETENIR",
-                    value=sous_titre,
-                    inline=False,
-                )
+        except discord.HTTPException as error:
+            logger.exception("Erreur de publication immersive : %s", error)
 
-            if image_url:
-                embed.set_image(url=image_url)
-
-            embed.set_footer(
-                text="WORLDS HUB • League of Legends Worlds 2026"
+            await interaction.response.send_message(
+                "❌ Discord n'a pas accepté la publication. "
+                "Vérifie la longueur du message et les permissions du bot.",
+                ephemeral=True,
             )
+            return
 
-            await channel.send(
-                embed=embed,
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-
-    except discord.Forbidden:
-        await interaction.response.send_message(
-            "❌ Discord refuse la publication. Vérifie les permissions du bot.",
-            ephemeral=True,
+    # --------------------------------------------------------
+    # STYLE EMBED
+    # --------------------------------------------------------
+    else:
+        embed = discord.Embed(
+            title=titre,
+            description=texte[:4096],
+            color=selected_color,
+            timestamp=datetime.now(timezone.utc),
         )
-        return
-    except discord.HTTPException:
-        logger.exception("Erreur de publication WORLDS HUB")
-        await interaction.response.send_message(
-            "❌ La publication a échoué. Réessaie avec un texte plus court.",
-            ephemeral=True,
-        )
-        return
 
+        if sous_titre:
+            embed.set_author(name=sous_titre)
+
+        if image_url:
+            embed.set_image(url=image_url)
+
+        embed.set_footer(text="WORLDS HUB • Worlds 2026")
+
+        try:
+            await channel.send(embed=embed)
+
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ Je n'ai pas la permission d'envoyer des messages "
+                "dans le salon worlds-2026.",
+                ephemeral=True,
+            )
+            return
+
+        except discord.HTTPException as error:
+            logger.exception("Erreur de publication embed : %s", error)
+
+            await interaction.response.send_message(
+                "❌ Discord n'a pas accepté la publication. "
+                "Vérifie les champs et les permissions du bot.",
+                ephemeral=True,
+            )
+            return
+
+    # Confirmation privée
     await interaction.response.send_message(
-        f"✅ Annonce publiée dans {channel.mention} !",
+        f"✅ Annonce publiée dans {channel.mention} "
+        f"avec le style **{style}**.",
         ephemeral=True,
     )
 
 
-# ---------------------------------------------------------
-# DÉMARRAGE DU BOT
-# Ce bloc doit impérativement rester tout en bas de bot.py
-# ---------------------------------------------------------
+# ============================================================
+# DEMARRAGE
+# ============================================================
 
 if __name__ == "__main__":
     if not TOKEN:
-        raise RuntimeError("Le secret DISCORD_TOKEN est manquant.")
+        raise RuntimeError(
+            "La variable d'environnement DISCORD_TOKEN est manquante."
+        )
+
     bot.run(TOKEN)
