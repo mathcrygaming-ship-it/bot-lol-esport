@@ -221,30 +221,32 @@ def safe_text(text, limit=MAX_RECAP_CHARS):
     return shortened.strip()
 
 
- def fetch_schedule():
+ 
+async def fetch_schedule():
     if not CITO_API_KEY:
-        raise RuntimeError("La variable CITO_API_KEY manque sur FadeHost.")
+        raise RuntimeError(
+            "La variable CITO_API_KEY manque sur FadeHost."
+        )
 
     timeout = aiohttp.ClientTimeout(total=25)
-     with aiohttp.ClientSession(timeout=timeout) as session:
-         with session.get(
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(
             SCHEDULE_URL,
-            headers={
-                "x-api-key": CITO_API_KEY,
-                "Accept": "application/json",
-            },
+            headers={"x-api-key": CITO_API_KEY},
         ) as response:
-            if response.status != 200:
-                details = await response.text()
-                raise RuntimeError(
-                    f"Erreur calendrier Cito : HTTP {response.status} - "
-                    f"{details[:500]}"
-                )
-            payload = await response.json(content_type=None)
+            response.raise_for_status()
+            payload = await response.json()
 
     events = extract_events(payload)
-    logger.info("Calendrier Cito : %s événement(s) récupéré(s).", len(events))
+
+    logger.info(
+        "Calendrier Cito : %s événement(s) récupéré(s).",
+        len(events),
+    )
+
     return events
+
 
 
  def generate_recap(prompt):
