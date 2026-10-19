@@ -221,7 +221,6 @@ def safe_text(text, limit=MAX_RECAP_CHARS):
     return shortened.strip()
 
 
- 
 async def fetch_schedule():
     if not CITO_API_KEY:
         raise RuntimeError(
