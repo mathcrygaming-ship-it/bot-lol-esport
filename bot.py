@@ -711,7 +711,20 @@ async def resultats(
         return
 
     try:
-        events = await fetch_schedule()
+        logger.info("DIAGNOSTIC RESULTATS : %s événements reçus", len(events))
+
+        for event in events:
+            if isinstance(event, dict):
+                logger.info(
+                    "DIAGNOSTIC MATCH : date=%s | startTime=%s | start_time=%s | "
+                    "scheduledAt=%s | scheduled_at=%s | keys=%s",
+                    event.get("date"),
+                    event.get("startTime"),
+                    event.get("start_time"),
+                    event.get("scheduledAt"),
+                    event.get("scheduled_at"),
+                    list(event.keys())
+                )
     except (aiohttp.ClientError, TimeoutError, ValueError, RuntimeError) as exc:
         logger.exception("Erreur calendrier pour /resultats")
         await interaction.followup.send(
