@@ -221,13 +221,13 @@ def safe_text(text, limit=MAX_RECAP_CHARS):
     return shortened.strip()
 
 
-async def fetch_schedule():
+ def fetch_schedule():
     if not CITO_API_KEY:
         raise RuntimeError("La variable CITO_API_KEY manque sur FadeHost.")
 
     timeout = aiohttp.ClientTimeout(total=25)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(
+     with aiohttp.ClientSession(timeout=timeout) as session:
+         with session.get(
             SCHEDULE_URL,
             headers={
                 "x-api-key": CITO_API_KEY,
@@ -247,14 +247,14 @@ async def fetch_schedule():
     return events
 
 
-async def generate_recap(prompt):
+ def generate_recap(prompt):
     if not GEMINI_API_KEY:
         raise RuntimeError("La variable GEMINI_API_KEY manque sur FadeHost.")
 
     timeout = aiohttp.ClientTimeout(total=60)
 
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.post(
+     with aiohttp.ClientSession(timeout=timeout) as session:
+         with session.post(
             GEMINI_URL,
             params={"key": GEMINI_API_KEY},
             json={
@@ -380,11 +380,11 @@ class WorldsHub(discord.Client):
         super().__init__(intents=discord.Intents.default())
         self.tree = app_commands.CommandTree(self)
 
-    async def setup_hook(self):
+     def setup_hook(self):
         await self.tree.sync()
         logger.info("Commandes Discord synchronisées.")
 
-    async def on_ready(self):
+     def on_ready(self):
         logger.info("BOT LOL ESPORT connecté : %s", self.user)
 
 
@@ -396,7 +396,7 @@ bot = WorldsHub()
 # ---------------------------------------------------------
 
 @bot.tree.command(name="ping", description="Vérifie si BOT LOL ESPORT répond.")
-async def ping(interaction: discord.Interaction):
+ def ping(interaction: discord.Interaction):
     await interaction.response.send_message(
         "🏆 **WORLDS HUB est opérationnel !**",
         ephemeral=True,
@@ -412,7 +412,7 @@ async def ping(interaction: discord.Interaction):
     name="format",
     description="Guide complet du format officiel des Worlds 2026.",
 )
-async def format_worlds(interaction: discord.Interaction):
+ def format_worlds(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     pages = [
@@ -596,7 +596,7 @@ async def format_worlds(interaction: discord.Interaction):
     app_commands.Choice(name="5 matchs", value=5),
     app_commands.Choice(name="10 matchs", value=10),
 ])
-async def prochains_matchs(
+ def prochains_matchs(
     interaction: discord.Interaction,
     nombre: app_commands.Choice[int] | None = None,
 ):
@@ -693,7 +693,7 @@ async def prochains_matchs(
     app_commands.Choice(name="Novembre", value=11),
     app_commands.Choice(name="Décembre", value=12),
 ])
-async def resultats(
+ def resultats(
     interaction: discord.Interaction,
     jour: app_commands.Range[int, 1, 31],
     mois: app_commands.Choice[int],
@@ -709,15 +709,21 @@ async def resultats(
             ephemeral=True,
         )
         return
-
+    
     try:
-        logger.info("DIAGNOSTIC RESULTATS : %s événements reçus", len(events))
+        events = await fetch_schedule()
+
+        logger.info(
+            "DIAGNOSTIC RESULTATS : %s événements reçus",
+            len(events)
+        )
 
         for event in events:
             if isinstance(event, dict):
                 logger.info(
-                    "DIAGNOSTIC MATCH : date=%s | startTime=%s | start_time=%s | "
-                    "scheduledAt=%s | scheduled_at=%s | keys=%s",
+                    "DIAGNOSTIC MATCH : date=%s | startTime=%s | "
+                    "start_time=%s | scheduledAt=%s | "
+                    "scheduled_at=%s | keys=%s",
                     event.get("date"),
                     event.get("startTime"),
                     event.get("start_time"),
@@ -725,6 +731,7 @@ async def resultats(
                     event.get("scheduled_at"),
                     list(event.keys())
                 )
+
     except (aiohttp.ClientError, TimeoutError, ValueError, RuntimeError) as exc:
         logger.exception("Erreur calendrier pour /resultats")
         await interaction.followup.send(
@@ -853,7 +860,7 @@ async def resultats(
     ],
 )
 @app_commands.default_permissions(manage_messages=True)
-async def publier(
+ def publier(
     interaction: discord.Interaction,
     titre: app_commands.Range[str, 1, 180],
     texte: app_commands.Range[str, 1, 3500],
