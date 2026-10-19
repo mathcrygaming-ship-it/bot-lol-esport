@@ -1,7 +1,7 @@
 import os
 import logging
 import re
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from zoneinfo import ZoneInfo
 
 import aiohttp
@@ -603,7 +603,10 @@ async def prochains_matchs(
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     try:
-        events = await fetch_schedule()
+        events = await fetch_schedule(
+        start_date=selected_date - timedelta(days=1),
+        end_date=selected_date + timedelta(days=1),
+        )
     except (aiohttp.ClientError, TimeoutError, ValueError, RuntimeError) as exc:
         logger.exception("Erreur récupération calendrier")
         await interaction.followup.send(
