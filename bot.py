@@ -380,7 +380,7 @@ bot = WorldsHub()
 # ---------------------------------------------------------
 
 @bot.tree.command(name="ping", description="Vérifie si BOT LOL ESPORT répond.")
- def ping(interaction: discord.Interaction):
+async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(
         "🏆 **WORLDS HUB est opérationnel !**",
         ephemeral=True,
@@ -396,7 +396,7 @@ bot = WorldsHub()
     name="format",
     description="Guide complet du format officiel des Worlds 2026.",
 )
- def format_worlds(interaction: discord.Interaction):
+def format_worlds(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     pages = [
@@ -580,7 +580,7 @@ bot = WorldsHub()
     app_commands.Choice(name="5 matchs", value=5),
     app_commands.Choice(name="10 matchs", value=10),
 ])
- def prochains_matchs(
+def prochains_matchs(
     interaction: discord.Interaction,
     nombre: app_commands.Choice[int] | None = None,
 ):
@@ -677,7 +677,7 @@ bot = WorldsHub()
     app_commands.Choice(name="Novembre", value=11),
     app_commands.Choice(name="Décembre", value=12),
 ])
- def resultats(
+async def resultats(
     interaction: discord.Interaction,
     jour: app_commands.Range[int, 1, 31],
     mois: app_commands.Choice[int],
@@ -844,7 +844,7 @@ bot = WorldsHub()
     ],
 )
 @app_commands.default_permissions(manage_messages=True)
- def publier(
+async def publier(
     interaction: discord.Interaction,
     titre: app_commands.Range[str, 1, 180],
     texte: app_commands.Range[str, 1, 3500],
