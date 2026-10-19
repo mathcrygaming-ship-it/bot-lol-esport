@@ -247,8 +247,7 @@ async def fetch_schedule():
     return events
 
 
-
- def generate_recap(prompt):
+def generate_recap(prompt):
     if not GEMINI_API_KEY:
         raise RuntimeError("La variable GEMINI_API_KEY manque sur FadeHost.")
 
