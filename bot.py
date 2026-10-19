@@ -247,61 +247,45 @@ async def fetch_schedule():
     return events
 
 
-def generate_recap(prompt):
+async def generate_recap(prompt):
     if not GEMINI_API_KEY:
-        raise RuntimeError("La variable GEMINI_API_KEY manque sur FadeHost.")
-
-    timeout = aiohttp.ClientTimeout(total=60)
-
-     with aiohttp.ClientSession(timeout=timeout) as session:
-         with session.post(
-            GEMINI_URL,
-            params={"key": GEMINI_API_KEY},
-            json={
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": 0.55,
-                    "maxOutputTokens": 1800,
-                },
-            },
-        ) as response:
-            if response.status != 200:
-                details = await response.text()
-                logger.error(
-                    "Erreur Gemini HTTP %s: %s",
-                    response.status,
-                    details[:500],
-                )
-                raise RuntimeError(
-                    f"Gemini a refusé la requête (HTTP {response.status}). "
-                    "Vérifie la disponibilité du service et les quotas."
-                )
-
-            payload = await response.json()
-
-    candidates = payload.get("candidates") or []
-    if not candidates:
-        raise RuntimeError("Gemini n'a renvoyé aucun résumé exploitable.")
-
-    candidate = candidates[0]
-    parts = candidate.get("content", {}).get("parts", [])
-    text = "\n".join(
-        part.get("text", "")
-        for part in parts
-        if isinstance(part, dict) and part.get("text")
-    ).strip()
-
-    if not text:
-        reason = candidate.get("finishReason", "inconnu")
         raise RuntimeError(
-            f"Gemini n'a pas produit de texte exploitable (motif : {reason})."
+            "La variable GEMINI_API_KEY manque sur FadeHost."
         )
 
-    finish_reason = candidate.get("finishReason", "")
-    if finish_reason == "MAX_TOKENS":
-        logger.warning("Gemini a atteint sa limite de génération.")
+    timeout = aiohttp.ClientTimeout(total=30)
 
-    return safe_text(text)
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY,
+    }
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.post(
+            GEMINI_URL,
+            headers=headers,
+            json=payload,
+        ) as response:
+            response.raise_for_status()
+            data = await response.json()
+
+    try:
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except (KeyError, IndexError, TypeError) as exc:
+        logger.error("Réponse Gemini inattendue : %s", data)
+        raise RuntimeError(
+            "Gemini n'a pas renvoyé de texte exploitable."
+        ) from exc
 
 
 def build_prompt(match):
