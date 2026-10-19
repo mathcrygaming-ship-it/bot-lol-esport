@@ -358,18 +358,18 @@ Vise environ 2200 à 2800 caractères au maximum.
 Termine toutes tes phrases. Ne t'arrête pas en plein milieu d'une idée.
 """
 
-
 class WorldsHub(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.default())
         self.tree = app_commands.CommandTree(self)
 
-     def setup_hook(self):
+    async def setup_hook(self):
         await self.tree.sync()
         logger.info("Commandes Discord synchronisées.")
 
-     def on_ready(self):
+    async def on_ready(self):
         logger.info("BOT LOL ESPORT connecté : %s", self.user)
+
 
 
 bot = WorldsHub()
