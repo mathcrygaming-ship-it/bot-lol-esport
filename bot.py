@@ -1,7 +1,7 @@
 import os
 import logging
 import re
-from datetime import datetime, timezone, date, timedelta
+from datetime import datetime, timezone, date
 from zoneinfo import ZoneInfo
 
 import aiohttp
@@ -223,69 +223,85 @@ def safe_text(text, limit=MAX_RECAP_CHARS):
 
 async def fetch_schedule():
     if not CITO_API_KEY:
-        raise RuntimeError(
-            "La variable CITO_API_KEY manque sur FadeHost."
-        )
+        raise RuntimeError("La variable CITO_API_KEY manque sur FadeHost.")
 
     timeout = aiohttp.ClientTimeout(total=25)
-
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(
             SCHEDULE_URL,
-            headers={"x-api-key": CITO_API_KEY},
+            headers={
+                "x-api-key": CITO_API_KEY,
+                "Accept": "application/json",
+            },
         ) as response:
-            response.raise_for_status()
-            payload = await response.json()
+            if response.status != 200:
+                details = await response.text()
+                raise RuntimeError(
+                    f"Erreur calendrier Cito : HTTP {response.status} - "
+                    f"{details[:500]}"
+                )
+            payload = await response.json(content_type=None)
 
     events = extract_events(payload)
-
-    logger.info(
-        "Calendrier Cito : %s événement(s) récupéré(s).",
-        len(events),
-    )
-
+    logger.info("Calendrier Cito : %s événement(s) récupéré(s).", len(events))
     return events
 
 
 async def generate_recap(prompt):
     if not GEMINI_API_KEY:
-        raise RuntimeError(
-            "La variable GEMINI_API_KEY manque sur FadeHost."
-        )
+        raise RuntimeError("La variable GEMINI_API_KEY manque sur FadeHost.")
 
-    timeout = aiohttp.ClientTimeout(total=30)
-
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt}
-                ]
-            }
-        ]
-    }
-
-    headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY,
-    }
+    timeout = aiohttp.ClientTimeout(total=60)
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(
             GEMINI_URL,
-            headers=headers,
-            json=payload,
+            params={"key": GEMINI_API_KEY},
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.55,
+                    "maxOutputTokens": 1800,
+                },
+            },
         ) as response:
-            response.raise_for_status()
-            data = await response.json()
+            if response.status != 200:
+                details = await response.text()
+                logger.error(
+                    "Erreur Gemini HTTP %s: %s",
+                    response.status,
+                    details[:500],
+                )
+                raise RuntimeError(
+                    f"Gemini a refusé la requête (HTTP {response.status}). "
+                    "Vérifie la disponibilité du service et les quotas."
+                )
 
-    try:
-        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except (KeyError, IndexError, TypeError) as exc:
-        logger.error("Réponse Gemini inattendue : %s", data)
+            payload = await response.json()
+
+    candidates = payload.get("candidates") or []
+    if not candidates:
+        raise RuntimeError("Gemini n'a renvoyé aucun résumé exploitable.")
+
+    candidate = candidates[0]
+    parts = candidate.get("content", {}).get("parts", [])
+    text = "\n".join(
+        part.get("text", "")
+        for part in parts
+        if isinstance(part, dict) and part.get("text")
+    ).strip()
+
+    if not text:
+        reason = candidate.get("finishReason", "inconnu")
         raise RuntimeError(
-            "Gemini n'a pas renvoyé de texte exploitable."
-        ) from exc
+            f"Gemini n'a pas produit de texte exploitable (motif : {reason})."
+        )
+
+    finish_reason = candidate.get("finishReason", "")
+    if finish_reason == "MAX_TOKENS":
+        logger.warning("Gemini a atteint sa limite de génération.")
+
+    return safe_text(text)
 
 
 def build_prompt(match):
@@ -358,6 +374,7 @@ Vise environ 2200 à 2800 caractères au maximum.
 Termine toutes tes phrases. Ne t'arrête pas en plein milieu d'une idée.
 """
 
+
 class WorldsHub(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.default())
@@ -369,7 +386,6 @@ class WorldsHub(discord.Client):
 
     async def on_ready(self):
         logger.info("BOT LOL ESPORT connecté : %s", self.user)
-
 
 
 bot = WorldsHub()
@@ -396,7 +412,7 @@ async def ping(interaction: discord.Interaction):
     name="format",
     description="Guide complet du format officiel des Worlds 2026.",
 )
-def format_worlds(interaction: discord.Interaction):
+async def format_worlds(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     pages = [
@@ -580,17 +596,14 @@ def format_worlds(interaction: discord.Interaction):
     app_commands.Choice(name="5 matchs", value=5),
     app_commands.Choice(name="10 matchs", value=10),
 ])
-def prochains_matchs(
+async def prochains_matchs(
     interaction: discord.Interaction,
     nombre: app_commands.Choice[int] | None = None,
 ):
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     try:
-        events = await fetch_schedule(
-        start_date=selected_date - timedelta(days=1),
-        end_date=selected_date + timedelta(days=1),
-        )
+        events = await fetch_schedule()
     except (aiohttp.ClientError, TimeoutError, ValueError, RuntimeError) as exc:
         logger.exception("Erreur récupération calendrier")
         await interaction.followup.send(
@@ -693,29 +706,9 @@ async def resultats(
             ephemeral=True,
         )
         return
-    
+
     try:
         events = await fetch_schedule()
-
-        logger.info(
-            "DIAGNOSTIC RESULTATS : %s événements reçus",
-            len(events)
-        )
-
-        for event in events:
-            if isinstance(event, dict):
-                logger.info(
-                    "DIAGNOSTIC MATCH : date=%s | startTime=%s | "
-                    "start_time=%s | scheduledAt=%s | "
-                    "scheduled_at=%s | keys=%s",
-                    event.get("date"),
-                    event.get("startTime"),
-                    event.get("start_time"),
-                    event.get("scheduledAt"),
-                    event.get("scheduled_at"),
-                    list(event.keys())
-                )
-
     except (aiohttp.ClientError, TimeoutError, ValueError, RuntimeError) as exc:
         logger.exception("Erreur calendrier pour /resultats")
         await interaction.followup.send(
