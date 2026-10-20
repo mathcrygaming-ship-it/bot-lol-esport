@@ -937,13 +937,25 @@ async def resultats(
         if "worlds" not in league_marker and "world championship" not in league_marker:
             continue
 
+        # Les scores bruts de Cito sont conservés pour éviter de les perdre.
+        team1_data = event.get("team1") or {}
+        team2_data = event.get("team2") or {}
+        score1 = team1_data.get("score")
+        score2 = team2_data.get("score")
+
+        score_text = (
+            f"{score1} - {score2}"
+            if score1 is not None and score2 is not None
+            else event_score(event)
+        )
+
         matches.append({
             "date": start,
             "team1": extract_team(event, 1),
             "team2": extract_team(event, 2),
             "stage": event_stage(event),
             "state": event_state(event),
-            "score": event_score(event),
+            "score": score_text,
             "raw": event,
         })
 
