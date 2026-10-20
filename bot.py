@@ -918,7 +918,8 @@ async def resultats(
             continue
 
         # /resultats doit afficher uniquement les rencontres terminées.
-        if event_state(event) != "terminé":
+        state = str(event_state(event) or "").strip().lower()
+        if state not in {"terminé", "termine", "completed", "complete", "finished", "ended"}:
             continue
 
         # Empêche l'affichage d'autres compétitions si l'API
