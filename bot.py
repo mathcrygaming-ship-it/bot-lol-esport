@@ -39,16 +39,90 @@ MOIS = [
 MAX_RECAP_CHARS = 3400
 
 
+
 def format_date(value):
-    if not value:
+    """Convertit une date Cito en datetime avec le fuseau Europe/Paris."""
+    if value is None or value == "":
         return None
+
     try:
-        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        # Horodatage Unix en secondes ou millisecondes.
+        if isinstance(value, (int, float)):
+            timestamp = float(value)
+
+            if abs(timestamp) > 100_000_000_000:
+                timestamp /= 1000
+
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc).astimezone(PARIS)
+
+        text_value = str(value).strip()
+
+        # Certains champs contiennent un horodatage numérique en texte.
+        if text_value.isdigit():
+            timestamp = float(text_value)
+
+            if abs(timestamp) > 100_000_000_000:
+                timestamp /= 1000
+
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc).astimezone(PARIS)
+
+        # Dates ISO 8601, avec ou sans fuseau horaire.
+        normalized = text_value.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
+
         return dt.astimezone(PARIS)
-    except (ValueError, TypeError):
+
+    except (ValueError, TypeError, OverflowError, OSError):
         return None
+
+
+def event_start(event):
+    """Trouve la date du match dans les différents formats Cito."""
+    if not isinstance(event, dict):
+        return None
+
+    date_keys = (
+        "startTime", "start_time",
+        "scheduledAt", "scheduled_at",
+        "start", "date",
+        "startDate", "start_date",
+        "beginAt", "begin_at",
+        "startTimestamp", "start_timestamp",
+        "timestamp", "kickoff",
+        "gameDate", "game_date",
+        "scheduled", "dateTime", "datetime",
+    )
+
+    # Cherche d'abord les champs de date directement présents.
+    for key in date_keys:
+        value = event.get(key)
+
+        if isinstance(value, dict):
+            for nested_key in (
+                "dateTime", "datetime", "timestamp",
+                "value", "date", "startTime", "start_time",
+            ):
+                parsed = format_date(value.get(nested_key))
+                if parsed:
+                    return parsed
+        else:
+            parsed = format_date(value)
+            if parsed:
+                return parsed
+
+    # Certaines réponses Cito regroupent les informations temporelles.
+    for container_key in ("schedule", "time", "start", "game", "match"):
+        nested = event.get(container_key)
+
+        if isinstance(nested, dict):
+            parsed = event_start(nested)
+            if parsed:
+                return parsed
+
+    return None
 
 
 def date_fr(dt):
@@ -56,30 +130,6 @@ def date_fr(dt):
         f"{JOURS[dt.weekday()].capitalize()} {dt.day} "
         f"{MOIS[dt.month - 1]} {dt.year} à {dt:%H} h {dt:%M}"
     )
-
-
-def event_start(event):
-    """Retourne la date de début d'un match, avec plusieurs noms de champs possibles."""
-    for key in (
-        "startTime", "start_time", "scheduledAt", "scheduled_at",
-        "start", "date", "startDate", "start_date", "beginAt", "begin_at",
-    ):
-        value = event.get(key)
-        if value:
-            parsed = format_date(value)
-            if parsed:
-                return parsed
-
-    # Quelques réponses encapsulent la date dans un objet.
-    for key in ("schedule", "time", "startTime", "start_time"):
-        value = event.get(key)
-        if isinstance(value, dict):
-            for nested_key in ("dateTime", "datetime", "timestamp", "value", "date"):
-                parsed = format_date(value.get(nested_key))
-                if parsed:
-                    return parsed
-
-    return None
 
 
 def team_name(value):
