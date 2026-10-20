@@ -1,7 +1,7 @@
 import os
 import logging
 import re
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from zoneinfo import ZoneInfo
 
 import aiohttp
@@ -13,7 +13,7 @@ CITO_API_KEY = os.getenv("CITO_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 PARIS = ZoneInfo("Europe/Paris")
-SCHEDULE_URL = "https://api.citoapi.com/api/v1/lol/leagues/lol-worlds/schedule"
+SCHEDULE_URL = "https://api.citoapi.com/api/v1/lol/schedule"
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
     "models/gemini-3.6-flash:generateContent"
@@ -233,16 +233,112 @@ def event_state(event):
 
 
 def event_score(event):
+    """Récupère le score final depuis les différents formats Cito."""
+
     score = event.get("score")
+
+    # Format : {"team1": 3, "team2": 0}
     if isinstance(score, dict):
-        return str(score.get("display") or score.get("value") or "")
-    if score is not None:
+        team1_score = score.get("team1")
+        team2_score = score.get("team2")
+
+        if team1_score is not None and team2_score is not None:
+            return f"{team1_score}–{team2_score}"
+
+        # Format : {"display": "3–0"} ou {"value": "3–0"}
+        display = score.get("display") or score.get("value")
+        if display is not None:
+            return str(display)
+
+    # Format : score directement placé sur les équipes.
+    teams = event.get("teams")
+
+    if isinstance(teams, list) and len(teams) >= 2:
+        if isinstance(teams[0], dict) and isinstance(teams[1], dict):
+            score1 = teams[0].get("score")
+            score2 = teams[1].get("score")
+
+            if score1 is not None and score2 is not None:
+                return f"{score1}–{score2}"
+
+    # Autres formats possibles.
+    if isinstance(score, (int, float, str)) and str(score).strip():
         return str(score)
+
     result = event.get("result")
-    if isinstance(result, str):
-        return result
+
+    if isinstance(result, str) and result.strip():
+        return result.strip()
+
+    if isinstance(result, dict):
+        team1_score = result.get("team1")
+        team2_score = result.get("team2")
+
+        if team1_score is not None and team2_score is not None:
+            return f"{team1_score}–{team2_score}"
+
+        display = result.get("display") or result.get("value")
+        if display is not None:
+            return str(display)
+
     return ""
 
+def build_fallback_recap(match):
+    """Résumé factuel gratuit, sans dépendance à un service IA."""
+
+    team1 = match["team1"]
+    team2 = match["team2"]
+    score = match["score"]
+    state = match["state"]
+    stage = match["stage"]
+    match_date = date_fr(match["date"])
+
+    if state == "terminé":
+        if score:
+            recap = (
+                f"## 🏁 Résultat final confirmé\n\n"
+                f"**{team1} {score} {team2}**\n\n"
+                f"La rencontre de la phase **{stage}** est terminée. "
+                f"Le score final transmis par la source est **{score}**. "
+                f"Ce résultat permet de confirmer l'issue de la rencontre, "
+                f"sans spéculer sur son déroulement.\n\n"
+                f"📅 **Date :** {match_date}\n\n"
+                f"🔎 Les statistiques détaillées, les drafts et les "
+                f"moments clés ne seront mentionnés que si la source "
+                f"fournit effectivement ces informations."
+            )
+        else:
+            recap = (
+                f"## 🏁 Rencontre terminée\n\n"
+                f"**{team1} contre {team2}**\n\n"
+                f"La source indique que la rencontre est terminée, "
+                f"mais ne fournit pas de score final exploitable. "
+                f"Je préfère ne pas inventer le résultat.\n\n"
+                f"📅 **Date :** {match_date}\n"
+                f"🏆 **Phase :** {stage}"
+            )
+
+        return recap
+
+    if state == "en cours":
+        return (
+            f"## 🔴 Rencontre en cours\n\n"
+            f"**{team1} contre {team2}**\n\n"
+            f"La rencontre est indiquée comme étant en cours. "
+            f"Le score disponible est : **{score or 'non disponible'}**. "
+            f"Aucun résultat final ne sera annoncé avant confirmation.\n\n"
+            f"📅 {match_date} • 🏆 {stage}"
+        )
+
+    return (
+        f"## 📅 Rencontre programmée\n\n"
+        f"**{team1} contre {team2}**\n\n"
+        f"La rencontre est prévue le **{match_date}**, "
+        f"dans la phase **{stage}**. "
+        f"Le résultat n'est pas encore confirmé.\n\n"
+        f"Les informations seront enrichies lorsque la source "
+        f"publiera les données du match."
+    )
 
 def safe_text(text, limit=MAX_RECAP_CHARS):
     """Évite les textes trop longs et privilégie une fin de phrase."""
@@ -271,11 +367,28 @@ def safe_text(text, limit=MAX_RECAP_CHARS):
     return shortened.strip()
 
 
-async def fetch_schedule():
+async def fetch_schedule(selected_date):
     if not CITO_API_KEY:
-        raise RuntimeError("La variable CITO_API_KEY manque sur FadeHost.")
+        raise RuntimeError(
+            "La variable CITO_API_KEY manque sur FadeHost."
+        )
+
+    # Marge d'un jour de chaque côté pour tenir compte
+    # du décalage entre UTC et l'heure française.
+    date_from = (selected_date - timedelta(days=1)).isoformat()
+    date_to = (selected_date + timedelta(days=1)).isoformat()
+
+    params = {
+        "from": date_from,
+        "to": date_to,
+        "state": "completed",
+        "leagueId": "lol-worlds",
+        "limit": 100,
+        "offset": 0,
+    }
 
     timeout = aiohttp.ClientTimeout(total=25)
+
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(
             SCHEDULE_URL,
@@ -283,17 +396,31 @@ async def fetch_schedule():
                 "x-api-key": CITO_API_KEY,
                 "Accept": "application/json",
             },
+            params=params,
         ) as response:
             if response.status != 200:
                 details = await response.text()
-                raise RuntimeError(
-                    f"Erreur calendrier Cito : HTTP {response.status} - "
-                    f"{details[:500]}"
+                logger.error(
+                    "Erreur calendrier Cito HTTP %s : %s",
+                    response.status,
+                    details[:500],
                 )
+                raise RuntimeError(
+                    f"Erreur calendrier Cito : HTTP {response.status}"
+                )
+
             payload = await response.json(content_type=None)
 
     events = extract_events(payload)
-    logger.info("Calendrier Cito : %s événement(s) récupéré(s).", len(events))
+
+    logger.info(
+        "Calendrier Cito historique : %s événement(s) récupéré(s) "
+        "pour la période %s à %s.",
+        len(events),
+        date_from,
+        date_to,
+    )
+
     return events
 
 
@@ -759,7 +886,7 @@ async def resultats(
         return
 
     try:
-        events = await fetch_schedule()
+        events = await fetch_schedule(selected_date)
     except (aiohttp.ClientError, TimeoutError, ValueError, RuntimeError) as exc:
         logger.exception("Erreur calendrier pour /resultats")
         await interaction.followup.send(
@@ -788,6 +915,25 @@ async def resultats(
         start = event_start(event)
 
         if not start or start.date() != selected_date:
+            continue
+
+        # /resultats doit afficher uniquement les rencontres terminées.
+        if event_state(event) != "terminé":
+            continue
+
+        # Empêche l'affichage d'autres compétitions si l'API
+        # ignore ou n'applique pas son filtre de ligue.
+        league_marker = " ".join(
+            str(event.get(key) or "")
+            for key in (
+                "leagueId",
+                "leagueName",
+                "tournamentId",
+                "tournamentName",
+            )
+        ).lower()
+
+        if "worlds" not in league_marker and "world championship" not in league_marker:
             continue
 
         matches.append({
@@ -821,17 +967,12 @@ async def resultats(
     for match in matches[:5]:
         try:
             text = await generate_recap(build_prompt(match))
-        except (aiohttp.ClientError, TimeoutError, ValueError, RuntimeError):
-            logger.exception("Erreur génération Gemini")
-            text = (
-                "⚠️ Le résumé IA n'a pas pu être généré.\n\n"
-                f"**{match['team1']} contre {match['team2']}**\n"
-                f"📅 {date_fr(match['date'])}\n"
-                f"🏁 Phase : {match['stage']}\n"
-                f"État : {match['state']}\n"
-                f"Score : {match['score'] or 'non disponible'}\n\n"
-                "Les informations détaillées ne sont pas disponibles pour le moment."
+
+        except Exception:
+            logger.exception(
+                "Échec du résumé Gemini. Utilisation du résumé factuel."
             )
+            text = build_fallback_recap(match)
 
         embed = discord.Embed(
             title=f"🏆 {match['team1']} vs {match['team2']}",
@@ -857,7 +998,7 @@ async def resultats(
             )
 
         embed.set_footer(
-            text="WORLDS HUB • Données Cito • Faits non confirmés à vérifier"
+            text="WORLDS HUB • RESULTATS Cito • Résumé factuel si IA indisponible"
         )
 
         await interaction.followup.send(embed=embed, ephemeral=True)
