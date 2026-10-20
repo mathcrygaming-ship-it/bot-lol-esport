@@ -740,6 +740,7 @@ async def prochains_matchs(
     app_commands.Choice(name="Novembre", value=11),
     app_commands.Choice(name="Décembre", value=12),
 ])
+
 async def resultats(
     interaction: discord.Interaction,
     jour: app_commands.Range[int, 1, 31],
@@ -766,6 +767,17 @@ async def resultats(
             ephemeral=True,
         )
         return
+    
+    logger.info("DEBUG RESULTATS : date recherchée = %s", selected_date)
+    logger.info("DEBUG RESULTATS : %s événements reçus", len(events))
+
+    for i, event in enumerate(events):
+        if isinstance(event, dict):
+            logger.info(
+                "DEBUG RESULTATS #%s : %s",
+                i + 1,
+                event
+            )
 
     matches = []
 
