@@ -780,7 +780,7 @@ async def prochains_matchs(
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     try:
-        events = await fetch_schedule()
+        events = await fetch_schedule(datetime.now(timezone.utc).date())
     except (aiohttp.ClientError, TimeoutError, ValueError, RuntimeError) as exc:
         logger.exception("Erreur récupération calendrier")
         await interaction.followup.send(
