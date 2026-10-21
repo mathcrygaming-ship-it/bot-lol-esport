@@ -424,6 +424,46 @@ async def fetch_schedule(selected_date):
     return events
 
 
+async def fetch_upcoming_schedule():
+    """Récupère le calendrier des Worlds, y compris les matchs à venir."""
+    if not CITO_API_KEY:
+        raise RuntimeError(
+            "La variable CITO_API_KEY manque sur FadeHost."
+        )
+
+    timeout = aiohttp.ClientTimeout(total=25)
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(
+            SCHEDULE_URL,
+            headers={
+                "x-api-key": CITO_API_KEY,
+                "Accept": "application/json",
+            },
+        ) as response:
+            if response.status != 200:
+                details = await response.text()
+                logger.error(
+                    "Erreur calendrier futur Cito HTTP %s : %s",
+                    response.status,
+                    details[:500],
+                )
+                raise RuntimeError(
+                    f"Erreur calendrier Cito : HTTP {response.status}"
+                )
+
+            payload = await response.json(content_type=None)
+
+    events = extract_events(payload)
+
+    logger.info(
+        "Calendrier Cito futur : %s événement(s) récupéré(s).",
+        len(events),
+    )
+
+    return events
+
+
 async def generate_recap(prompt):
     if not GEMINI_API_KEY:
         raise RuntimeError("La variable GEMINI_API_KEY manque sur FadeHost.")
@@ -780,7 +820,7 @@ async def prochains_matchs(
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     try:
-        events = await fetch_schedule(datetime.now(timezone.utc).date())
+        events = await fetch_upcoming_schedule()
     except (aiohttp.ClientError, TimeoutError, ValueError, RuntimeError) as exc:
         logger.exception("Erreur récupération calendrier")
         await interaction.followup.send(
