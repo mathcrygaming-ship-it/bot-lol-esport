@@ -425,7 +425,7 @@ async def fetch_schedule(selected_date):
 
 
 async def fetch_upcoming_schedule():
-    """Récupère le calendrier des Worlds, y compris les matchs à venir."""
+    """Récupère uniquement le calendrier des Worlds 2026."""
     if not CITO_API_KEY:
         raise RuntimeError(
             "La variable CITO_API_KEY manque sur FadeHost."
@@ -454,10 +454,22 @@ async def fetch_upcoming_schedule():
 
             payload = await response.json(content_type=None)
 
-    events = extract_events(payload)
+    all_events = extract_events(payload)
+
+    events = [
+        event
+        for event in all_events
+        if isinstance(event, dict)
+        and str(event.get("tournamentId") or "").strip().lower()
+        == "lol-worlds_2026"
+        and str(event.get("leagueId") or "").strip().lower()
+        == "lol-worlds"
+    ]
 
     logger.info(
-        "Calendrier Cito futur : %s événement(s) récupéré(s).",
+        "Calendrier Cito : %s événement(s) reçu(s), "
+        "%s événement(s) des Worlds 2026 conservé(s).",
+        len(all_events),
         len(events),
     )
 
